@@ -36,9 +36,22 @@ noinst_LTLIBRARIES = libruntimestubs.la
 libruntimestubs_la_SOURCES = \
 	$(BUILT_SOURCES)
 
+pkglib_LTLIBRARIES = libbmthrift.la
+libbmthrift_la_SOURCES = \
+	$(BUILT_SOURCES)
+
+pkginclude_HEADERS = \
+	gen-cpp/standard_constants.h \
+	gen-cpp/Standard.h \
+	gen-cpp/standard_types.h \
+	gen-cpp/simple_pre_constants.h \
+	gen-cpp/SimplePre.h \
+	gen-cpp/simple_pre_types.h \
+	gen-cpp/simple_pre_lag_constants.h \
+	gen-cpp/SimplePreLAG.h \
+	gen-cpp/simple_pre_lag_types.h
 
 # See http://www.gnu.org/software/automake/manual/html_node/Multiple-Outputs.html
-
 thrift_files.ts: standard.thrift simple_pre.thrift simple_pre_lag.thrift
 	@rm -f thrift_files.tmp
 	@touch thrift_files.tmp

@@ -25,6 +25,11 @@ $(top_srcdir)/modules/BMI/libbmi.la \
 $(top_srcdir)/third_party/jsoncpp/libjson.la -lboost_system -lboost_thread -lthrift -lboost_program_options
 simple_switch_LDFLAGS = -pthread
 
+libsswitch_la_CXXFLAGS = $(AM_CXXFLAGS)
+pkglib_LTLIBRARIES = libsswitch.la
+libsswitch_la_SOURCES = \
+	$(BUILT_SOURCES)
+
 # See http://www.gnu.org/software/automake/manual/html_node/Multiple-Outputs.html
 
 THRIFT_IDL = thrift/simple_switch.thrift

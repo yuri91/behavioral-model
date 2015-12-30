@@ -1,4 +1,4 @@
-SUBDIRS = include
+SUBDIRS = include . examples
 
 AM_CPPFLAGS += \
 -I$(top_srcdir)/modules/bm_sim/include \
@@ -15,4 +15,5 @@ noinst_LTLIBRARIES = libbmapps.la
 
 libbmapps_la_SOURCES = \
 src/learn.cpp \
+src/packet_pipe.cpp \
 src/nn.h

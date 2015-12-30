@@ -19,6 +19,8 @@
  */
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include <cassert>
 
@@ -29,64 +31,64 @@
 
 namespace {
 
-LearnListener *listener;
+bm_apps::LearnListener *listener;
 
 typedef struct {
   char src_addr[6];
-  short ingress_port;
+  uint16_t ingress_port;
 } __attribute__((packed)) sample_t;
 
-}
+}  // namespace
 
-using namespace bm_runtime::standard;
+namespace runtime = bm_runtime::standard;
 
 namespace {
 
-void learn_cb(const LearnListener::MsgInfo &msg_info,
-	      const char *data, void *cookie) {
+void learn_cb(const bm_apps::LearnListener::MsgInfo &msg_info,
+              const char *data, void *cookie) {
   std::cout << "CB with " << msg_info.num_samples << " samples\n";
 
-  boost::shared_ptr<StandardClient> client = listener->get_client();
+  boost::shared_ptr<runtime::StandardClient> client = listener->get_client();
   assert(client);
 
-  for(unsigned int i = 0; i < msg_info.num_samples; i++) {
+  for (unsigned int i = 0; i < msg_info.num_samples; i++) {
     const sample_t *sample = ((const sample_t *) data) + i;
 
     std::cout << "ingress port is " << ntohs(sample->ingress_port)
-	      << std::endl;
+              << std::endl;
 
-    BmMatchParam match_param;
-    match_param.type = BmMatchParamType::type::EXACT;
-    BmMatchParamExact match_param_exact;
+    runtime::BmMatchParam match_param;
+    match_param.type = runtime::BmMatchParamType::type::EXACT;
+    runtime::BmMatchParamExact match_param_exact;
     match_param_exact.key =
       std::string(sample->src_addr, sizeof(sample->src_addr));
     match_param.__set_exact(match_param_exact);
 
-    BmAddEntryOptions options;
+    runtime::BmAddEntryOptions options;
 
     client->bm_mt_add_entry("smac", {match_param},
-			    "_nop", std::vector<std::string>(),
-			    options);
+                            "_nop", std::vector<std::string>(),
+                            options);
 
     std::vector<std::string> action_data =
-      {std::string((char *) &sample->ingress_port, 2)};
+      {std::string(reinterpret_cast<const char *>(&sample->ingress_port), 2)};
 
     client->bm_mt_add_entry("dmac", {match_param},
-			    "forward", std::move(action_data),
-			    options);
+                            "forward", std::move(action_data),
+                            options);
   }
 
   client->bm_learning_ack_buffer(msg_info.list_id, msg_info.buffer_id);
 }
 
-}
+}  // namespace
 
 int main() {
-  listener = new LearnListener();
+  listener = new bm_apps::LearnListener("ipc:///tmp/bmv2-0-notifications.ipc");
   listener->register_cb(learn_cb, nullptr);
   listener->start();
 
-  while(1) std::this_thread::sleep_for(std::chrono::seconds(100));
+  while (true) std::this_thread::sleep_for(std::chrono::seconds(100));
 
   return 0;
 }

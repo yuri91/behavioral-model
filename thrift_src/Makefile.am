@@ -36,11 +36,11 @@ noinst_LTLIBRARIES = libruntimestubs.la
 libruntimestubs_la_SOURCES = \
 	$(BUILT_SOURCES)
 
-pkglib_LTLIBRARIES = libbmthrift.la
+lib_LTLIBRARIES = libbmthrift.la
 libbmthrift_la_SOURCES = \
 	$(BUILT_SOURCES)
 
-pkginclude_HEADERS = \
+include_HEADERS = \
 	gen-cpp/standard_constants.h \
 	gen-cpp/Standard.h \
 	gen-cpp/standard_types.h \

@@ -31,7 +31,7 @@ noinst_LTLIBRARIES = libsimpleswitch.la
 libsimpleswitch_la_SOURCES = \
 simple_switch.cpp simple_switch.h primitives.h
 
-bin_PROGRAMS = simple_switch
+sbin_PROGRAMS = simple_switch
 
 simple_switch_LDADD = \
 $(top_srcdir)/modules/bm_runtime/libbmruntime.la \
@@ -41,7 +41,7 @@ libsimpleswitch.la
 simple_switch_SOURCES = main.cpp $(BUILT_SOURCES)
 
 libsswitch_la_CXXFLAGS = $(AM_CXXFLAGS)
-pkglib_LTLIBRARIES = libsswitch.la
+lib_LTLIBRARIES = libsswitch.la
 libsswitch_la_SOURCES = \
 	$(BUILT_SOURCES)
 
@@ -75,7 +75,7 @@ $(BUILT_SOURCES): thrift_files.ts
 	  fi; \
 	fi
 
-pkginclude_HEADERS = \
+include_HEADERS = \
 gen-cpp/simple_switch_constants.h \
 gen-cpp/SimpleSwitch.h \
 gen-cpp/simple_switch_types.h

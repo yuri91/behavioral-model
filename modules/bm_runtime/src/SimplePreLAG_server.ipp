@@ -24,19 +24,24 @@
 
 namespace bm_runtime { namespace simple_pre_lag {
 
+using namespace bm;
+
 class SimplePreLAGHandler : virtual public SimplePreLAGIf {
 public:
-  SimplePreLAGHandler(Switch *sw) 
+  SimplePreLAGHandler(SwitchWContexts *sw)
     : switch_(sw) {
-    pre = sw->get_component<McSimplePreLAG>();
-    assert(pre != nullptr);
+    for (size_t cxt_id = 0; cxt_id < sw->get_nb_cxts(); cxt_id++) {
+      auto pre = sw->get_cxt_component<McSimplePreLAG>(cxt_id);
+      assert(pre != nullptr);
+      pres.push_back(pre);
+    }
   }
 
-  BmMcMgrpHandle bm_mc_mgrp_create(const BmMcMgrp mgrp) {
+  BmMcMgrpHandle bm_mc_mgrp_create(const int32_t cxt_id, const BmMcMgrp mgrp) {
     printf("bm_mc_mgrp_create\n");
     McSimplePre::mgrp_hdl_t mgrp_hdl;
-    McSimplePre::McReturnCode error_code =
-      pre->mc_mgrp_create(mgrp, &mgrp_hdl);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_mgrp_create(
+        mgrp, &mgrp_hdl);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -45,10 +50,10 @@ public:
     return mgrp_hdl;
   }
 
-  void bm_mc_mgrp_destroy(const BmMcMgrpHandle mgrp_handle) {
+  void bm_mc_mgrp_destroy(const int32_t cxt_id, const BmMcMgrpHandle mgrp_handle) {
     printf("bm_mc_mgrp_destroy\n");
-    McSimplePre::McReturnCode error_code =
-      pre->mc_mgrp_destroy(mgrp_handle);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_mgrp_destroy(
+        mgrp_handle);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -56,14 +61,12 @@ public:
     }
   }
 
-  BmMcL1Handle bm_mc_node_create(const BmMcRid rid,
-                                 const BmMcPortMap& port_map,
-                                 const BmMcLagMap& lag_map) {
+  BmMcL1Handle bm_mc_node_create(const int32_t cxt_id, const BmMcRid rid, const BmMcPortMap& port_map, const BmMcLagMap& lag_map) {
     printf("bm_mc_node_create\n");
     McSimplePre::l1_hdl_t l1_hdl;
-    McSimplePre::McReturnCode error_code =
-      pre->mc_node_create(rid, McSimplePre::PortMap(port_map),
-                          McSimplePre::PortMap(lag_map), &l1_hdl);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_node_create(
+        rid, McSimplePre::PortMap(port_map),
+        McSimplePre::PortMap(lag_map), &l1_hdl);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -72,10 +75,10 @@ public:
     return l1_hdl;
   }
 
-  void bm_mc_node_associate(const BmMcMgrpHandle mgrp_handle, const BmMcL1Handle l1_handle) {
+  void bm_mc_node_associate(const int32_t cxt_id, const BmMcMgrpHandle mgrp_handle, const BmMcL1Handle l1_handle) {
     printf("bm_mc_node_associate\n");
-    McSimplePre::McReturnCode error_code =
-      pre->mc_node_associate(mgrp_handle, l1_handle);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_node_associate(
+        mgrp_handle, l1_handle);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -83,10 +86,10 @@ public:
     }
   }
 
-  void bm_mc_node_dissociate(const BmMcMgrpHandle mgrp_handle, const BmMcL1Handle l1_handle) {
+  void bm_mc_node_dissociate(const int32_t cxt_id, const BmMcMgrpHandle mgrp_handle, const BmMcL1Handle l1_handle) {
     printf("bm_mc_node_dissociate\n");
-    McSimplePre::McReturnCode error_code =
-      pre->mc_node_dissociate(mgrp_handle, l1_handle);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_node_dissociate(
+        mgrp_handle, l1_handle);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -94,10 +97,10 @@ public:
     }
   }
 
-  void bm_mc_node_destroy(const BmMcL1Handle l1_handle) {
+  void bm_mc_node_destroy(const int32_t cxt_id, const BmMcL1Handle l1_handle) {
     printf("bm_mc_node_destroy\n");
-    McSimplePre::McReturnCode error_code =
-      pre->mc_node_destroy(l1_handle);
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_node_destroy(
+        l1_handle);
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -105,15 +108,11 @@ public:
     }
   }
 
-  void bm_mc_node_update(const BmMcL1Handle l1_handle,
-                         const BmMcPortMap& port_map,
-                         const BmMcLagMap& lag_map) {
+  void bm_mc_node_update(const int32_t cxt_id, const BmMcL1Handle l1_handle, const BmMcPortMap& port_map, const BmMcLagMap& lag_map) {
     printf("bm_mc_node_update\n");
-    McSimplePre::McReturnCode error_code = pre->mc_node_update(
-        l1_handle,
-        McSimplePre::PortMap(port_map),
-        McSimplePre::LagMap(lag_map)
-    );
+    McSimplePre::McReturnCode error_code = pres.at(cxt_id)->mc_node_update(
+        l1_handle, McSimplePre::PortMap(port_map),
+        McSimplePre::LagMap(lag_map));
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -121,13 +120,11 @@ public:
     }
   }
 
-  void bm_mc_set_lag_membership(const BmMcLagIndex lag_index,
-                                const BmMcPortMap& port_map) {
+  void bm_mc_set_lag_membership(const int32_t cxt_id, const BmMcLagIndex lag_index, const BmMcPortMap& port_map) {
     printf("bm_mc_set_lag_membership\n");
-    McSimplePre::McReturnCode error_code = pre->mc_set_lag_membership(
-        lag_index,
-        McSimplePre::PortMap(port_map)
-    );
+    McSimplePre::McReturnCode error_code =
+        pres.at(cxt_id)->mc_set_lag_membership(
+            lag_index, McSimplePre::PortMap(port_map));
     if(error_code != McSimplePre::SUCCESS) {
       InvalidMcOperation imo;
       imo.code = (McOperationErrorCode::type) error_code;
@@ -136,8 +133,8 @@ public:
   }
 
 private:
-  Switch *switch_{nullptr};
-  std::shared_ptr<McSimplePreLAG> pre{nullptr};
+  SwitchWContexts *switch_{nullptr};
+  std::vector<std::shared_ptr<McSimplePreLAG> > pres{};
 };
 
 } }

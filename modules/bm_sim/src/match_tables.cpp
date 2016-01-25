@@ -23,6 +23,9 @@
 
 #include "bm_sim/match_tables.h"
 #include "bm_sim/logger.h"
+#include "bm_sim/event_logger.h"
+
+namespace bm {
 
 namespace {
 
@@ -60,15 +63,27 @@ MatchTableAbstract::apply_action(Packet *pkt) {
 
   const ActionEntry &action_entry = lookup(*pkt, &hit, &handle);
 
+  if (hit && with_meters) {
+    // we only execute the direct meter if hit, should we have a miss meter?
+    Field &target_f = pkt->get_phv()->get_field(
+        meter_target_header, meter_target_offset);
+    Meter &meter = match_unit_->get_meter(handle);
+    target_f.set(meter.execute(*pkt));
+  }
+
   // we're holding the lock for this...
   if (hit) {
-    ELOGGER->table_hit(*pkt, *this, handle);
+    BMELOG(table_hit, *pkt, *this, handle);
     BMLOG_DEBUG_PKT(*pkt, "Table '{}': hit with handle {}",
                     get_name(), handle);
   } else {
-    ELOGGER->table_miss(*pkt, *this);
+    BMELOG(table_miss, *pkt, *this);
     BMLOG_DEBUG_PKT(*pkt, "Table '{}': miss", get_name());
   }
+
+  DEBUGGER_NOTIFY_UPDATE_V(
+      Debugger::PacketId::make(pkt->get_packet_id(), pkt->get_copy_id()),
+      Debugger::FIELD_ACTION, action_entry.action_fn.get_action_id());
 
   BMLOG_DEBUG_PKT(*pkt, "Action entry is {}", action_entry);
 
@@ -83,6 +98,17 @@ void
 MatchTableAbstract::reset_state() {
   WriteLock lock = lock_write();
   reset_state_();
+}
+
+void
+MatchTableAbstract::set_direct_meters(MeterArray *meter_array,
+                                      header_id_t target_header,
+                                      int target_offset) {
+  WriteLock lock = lock_write();
+  match_unit_->set_direct_meters(meter_array);
+  meter_target_header = target_header;
+  meter_target_offset = target_offset;
+  with_meters = true;
 }
 
 MatchErrorCode
@@ -117,6 +143,19 @@ MatchTableAbstract::write_counters(entry_handle_t handle,
   // should I hide counter implementation more?
   meta.counter.write_counter(bytes, packets);
   return MatchErrorCode::SUCCESS;
+}
+
+MatchErrorCode
+MatchTableAbstract::set_meter_rates(
+    entry_handle_t handle,
+    const std::vector<Meter::rate_config_t> &configs) const {
+  if (!with_meters) return MatchErrorCode::METERS_DISABLED;
+  WriteLock lock = lock_write();
+  if (!is_valid_handle(handle)) return MatchErrorCode::INVALID_HANDLE;
+  Meter &meter = match_unit_->get_meter(handle);
+  Meter::MeterErrorCode rc = meter.set_rates(configs);
+  return (rc == Meter::MeterErrorCode::SUCCESS) ?
+      MatchErrorCode::SUCCESS : MatchErrorCode::ERROR;
 }
 
 MatchErrorCode
@@ -622,3 +661,5 @@ MatchTableIndirectWS::reset_state_() {
   num_groups = 0;
   group_entries.clear();
 }
+
+}  // namespace bm

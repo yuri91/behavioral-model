@@ -38,6 +38,9 @@
 #include "handle_mgr.h"
 #include "lpm_trie.h"
 #include "counters.h"
+#include "meters.h"
+
+namespace bm {
 
 typedef uintptr_t internal_handle_t;
 typedef uint64_t entry_handle_t;
@@ -66,19 +69,41 @@ struct MatchKeyParam {
   int prefix_length{0};  // optional
 };
 
+// This struct assumes that the fields are pushed in the right order, i.e. LPM
+// field first, maybe this should be asbtracted away
 struct MatchKeyBuilder {
   std::vector<header_id_t> valid_headers{};
   std::vector<std::pair<header_id_t, int> > fields{};
   size_t nbytes_key{0};
+  bool has_big_mask{false};
+  ByteContainer big_mask{};
 
   void push_back_field(header_id_t header, int field_offset, size_t nbits) {
     fields.push_back(std::pair<header_id_t, int>(header, field_offset));
-    nbytes_key += (nbits + 7) / 8;
+    size_t nbytes = (nbits + 7) / 8;
+    big_mask.append(ByteContainer(nbytes, '\xff'));
+    nbytes_key += nbytes;
+  }
+
+  void push_back_field(header_id_t header, int field_offset, size_t nbits,
+                       ByteContainer mask) {
+    size_t nbytes = (nbits + 7) / 8;
+    assert(mask.size() == nbytes);
+    has_big_mask = true;
+    big_mask.append(std::move(mask));
+    fields.push_back(std::pair<header_id_t, int>(header, field_offset));
+    nbytes_key += nbytes;
   }
 
   void push_back_valid_header(header_id_t header) {
     valid_headers.push_back(header);
+    big_mask.append(ByteContainer(1, '\xff'));
     nbytes_key++;
+  }
+
+  void apply_big_mask(ByteContainer *key) const {
+    if (has_big_mask)
+      key->apply_mask(big_mask);
   }
 
   void operator()(const PHV &phv, ByteContainer *key) const {
@@ -99,6 +124,8 @@ struct MatchKeyBuilder {
         key->append(std::string(field.get_nbytes(), '\x00'));
       }
     }
+    if (has_big_mask)
+      key->apply_mask(big_mask);
   }
 
   size_t get_nbytes_key() const { return nbytes_key; }
@@ -184,6 +211,10 @@ class MatchUnitAbstract_ {
 
   void reset_counters();
 
+  void set_direct_meters(MeterArray *meter_array);
+
+  Meter &get_meter(entry_handle_t handle);
+
   MatchErrorCode set_entry_ttl(entry_handle_t handle, unsigned int ttl_ms);
 
   void sweep_entries(std::vector<entry_handle_t> *entries) const;
@@ -215,6 +246,8 @@ class MatchUnitAbstract_ {
   HandleMgr handles{};
   MatchKeyBuilder match_key_builder;
   std::vector<MatchUnit::EntryMeta> entry_meta{};
+  // non-owning pointer, the meter array still belongs to P4Objects
+  MeterArray *direct_meters{nullptr};
 };
 
 template <typename V>
@@ -422,5 +455,7 @@ class MatchUnitTernary : public MatchUnitAbstract<V> {
  private:
   std::vector<Entry> entries{};
 };
+
+}  // namespace bm
 
 #endif  // BM_SIM_INCLUDE_BM_SIM_MATCH_UNITS_H_

@@ -36,6 +36,19 @@ using ts_res = std::chrono::microseconds;
 using std::chrono::duration_cast;
 using ticks = std::chrono::nanoseconds;
 
+using bm::Switch;
+using bm::Queue;
+using bm::Packet;
+using bm::PHV;
+using bm::Parser;
+using bm::Deparser;
+using bm::Pipeline;
+using bm::McSimplePreLAG;
+using bm::Field;
+using bm::FieldList;
+using bm::packet_id_t;
+using bm::p4object_id_t;
+
 class PacketQueue : public Queue<std::unique_ptr<Packet> > {
  private:
   typedef std::chrono::high_resolution_clock clock;
@@ -82,10 +95,10 @@ class SimpleSwitch : public Switch {
   int receive(int port_num, const char *buffer, int len) {
     static int pkt_id = 0;
 
-    Packet *packet = new Packet(Packet::make_new(
-        port_num, pkt_id++, len, PacketBuffer(2048, buffer, len)));
+    auto packet = new_packet_ptr(port_num, pkt_id++, len,
+                                 bm::PacketBuffer(2048, buffer, len));
 
-    ELOGGER->packet_in(*packet);
+    BMELOG(packet_in, *packet);
 
     PHV *phv = packet->get_phv();
     // many current P4 programs assume this
@@ -103,7 +116,7 @@ class SimpleSwitch : public Switch {
         .set(get_ts().count());
     }
 
-    input_buffer.push_front(std::unique_ptr<Packet>(packet));
+    input_buffer.push_front(std::move(packet));
     return 0;
   }
 

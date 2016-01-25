@@ -22,13 +22,15 @@
 
 #include "bm_sim/ageing.h"
 
+namespace bm {
+
 static_assert(sizeof(AgeingMonitor::msg_hdr_t) == 32u,
               "Invalid size for ageing notification header");
 
-AgeingMonitor::AgeingMonitor(int device_id,
+AgeingMonitor::AgeingMonitor(int device_id, int cxt_id,
                              std::shared_ptr<TransportIface> writer,
                              unsigned int sweep_interval_ms)
-    : device_id(device_id), writer(writer),
+    : device_id(device_id), cxt_id(cxt_id), writer(writer),
       sweep_interval_ms(sweep_interval_ms) {
   sweep_thread = std::thread(&AgeingMonitor::sweep_loop, this);
 }
@@ -112,6 +114,7 @@ AgeingMonitor::do_sweep() {
     memset(msg_hdr_, 0, sizeof(msg_hdr));
     memcpy(msg_hdr_, "AGE|", 4);
     msg_hdr.switch_id = device_id;
+    msg_hdr.cxt_id = cxt_id;
     msg_hdr.buffer_id = buffer_id++;
     msg_hdr.table_id = entry.first;
     msg_hdr.num_entries = num_entries;
@@ -124,3 +127,5 @@ AgeingMonitor::do_sweep() {
     entries.clear();
   }
 }
+
+}  // namespace bm

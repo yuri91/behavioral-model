@@ -29,7 +29,6 @@
 #include "bm_sim/logger.h"
 
 #include "simple_switch.h"
-#include "primitives.h"
 
 namespace {
 
@@ -54,13 +53,15 @@ REGISTER_HASH(hash_ex);
 
 struct bmv2_hash {
   uint64_t operator()(const char *buf, size_t s) const {
-    return hash::xxh64(buf, s);
+    return bm::hash::xxh64(buf, s);
   }
 };
 
 REGISTER_HASH(bmv2_hash);
 
 }  // namespace
+
+extern int import_primitives();
 
 SimpleSwitch::SimpleSwitch(int max_port)
   : Switch(false),  // enable_switch = false
@@ -79,6 +80,8 @@ SimpleSwitch::SimpleSwitch(int max_port)
   add_required_field("standard_metadata", "instance_type");
   add_required_field("standard_metadata", "egress_spec");
   add_required_field("standard_metadata", "clone_spec");
+
+  import_primitives();
 }
 
 void
@@ -98,7 +101,7 @@ SimpleSwitch::transmit_thread() {
   while (1) {
     std::unique_ptr<Packet> packet;
     output_buffer.pop_back(&packet);
-    ELOGGER->packet_out(*packet);
+    BMELOG(packet_out, *packet);
     BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                     packet->get_data_size(), packet->get_egress_port());
     transmit_fn(packet->get_egress_port(),
@@ -131,8 +134,7 @@ std::unique_ptr<Packet>
 SimpleSwitch::copy_ingress_pkt(
     const std::unique_ptr<Packet> &packet,
     PktInstanceType copy_type, p4object_id_t field_list_id) {
-  std::unique_ptr<Packet> packet_copy(new Packet(
-      packet->clone_no_phv()));
+  std::unique_ptr<Packet> packet_copy = packet->clone_no_phv_ptr();
   PHV *phv_copy = packet_copy->get_phv();
   phv_copy->reset_metadata();
   FieldList *field_list = this->get_field_list(field_list_id);
@@ -253,8 +255,7 @@ SimpleSwitch::ingress_thread() {
         BMLOG_DEBUG_PKT(*packet, "Replicating packet on port {}", egress_port);
         f_rid.set(out.rid);
         f_instance_type.set(PKT_INSTANCE_TYPE_REPLICATION);
-        std::unique_ptr<Packet> packet_copy(new Packet(
-            packet->clone()));
+        std::unique_ptr<Packet> packet_copy = packet->clone_with_phv_ptr();
         enqueue(egress_port, std::move(packet_copy));
       }
       f_instance_type.set(instance_type);
@@ -315,8 +316,8 @@ SimpleSwitch::egress_thread(int port) {
         f_instance_type.set(PKT_INSTANCE_TYPE_EGRESS_CLONE);
         f_clone_spec.set(0);
         p4object_id_t field_list_id = clone_spec >> 16;
-        std::unique_ptr<Packet> packet_copy(new Packet(
-            packet->clone_and_reset_metadata()));
+        std::unique_ptr<Packet> packet_copy =
+            packet->clone_with_phv_reset_metadata_ptr();
         PHV *phv_copy = packet_copy->get_phv();
         FieldList *field_list = this->get_field_list(field_list_id);
         for (const auto &p : *field_list) {
@@ -348,8 +349,7 @@ SimpleSwitch::egress_thread(int port) {
         FieldList *field_list = this->get_field_list(field_list_id);
         // TODO(antonin): just like for resubmit, there is no need for a copy
         // here, but it is more convenient for this first prototype
-        std::unique_ptr<Packet> packet_copy(new Packet(
-            packet->clone_no_phv()));
+        std::unique_ptr<Packet> packet_copy = packet->clone_no_phv_ptr();
         PHV *phv_copy = packet_copy->get_phv();
         phv_copy->reset_metadata();
         for (const auto &p : *field_list) {

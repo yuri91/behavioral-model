@@ -26,6 +26,8 @@
 #include <string>
 #include <map>
 
+namespace bm {
+
 class InterfaceList {
  public:
   typedef std::map<int, std::string>::iterator iterator;
@@ -48,7 +50,7 @@ class InterfaceList {
 };
 
 class OptionsParser {
-  friend class Switch;
+  friend class SwitchWContexts;
 
  public:
   void parse(int argc, char *argv[]);
@@ -70,6 +72,9 @@ class OptionsParser {
   std::string file_logger{};
   bool console_logging{false};
   std::string notifications_addr{};
+  bool debugger{false};
 };
+
+}  // namespace bm
 
 #endif  // BM_SIM_INCLUDE_BM_SIM_OPTIONS_PARSE_H_

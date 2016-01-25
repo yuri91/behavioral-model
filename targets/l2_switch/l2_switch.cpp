@@ -35,9 +35,16 @@
 #include "bm_sim/event_logger.h"
 #include "bm_sim/simple_pre.h"
 
-#include "primitives.h"
-
 #include "bm_runtime/bm_runtime.h"
+
+using bm::Switch;
+using bm::Queue;
+using bm::Packet;
+using bm::PHV;
+using bm::Parser;
+using bm::Deparser;
+using bm::Pipeline;
+using bm::McSimplePre;
 
 class SimpleSwitch : public Switch {
  public:
@@ -49,12 +56,12 @@ class SimpleSwitch : public Switch {
   int receive(int port_num, const char *buffer, int len) {
     static int pkt_id = 0;
 
-    Packet *packet = new Packet(Packet::make_new(
-        port_num, pkt_id++, len, PacketBuffer(2048, buffer, len)));
+    auto packet = new_packet_ptr(port_num, pkt_id++, len,
+                                 bm::PacketBuffer(2048, buffer, len));
 
-    ELOGGER->packet_in(*packet);
+    BMELOG(packet_in, *packet);
 
-    input_buffer.push_front(std::unique_ptr<Packet>(packet));
+    input_buffer.push_front(std::move(packet));
     return 0;
   }
 
@@ -79,7 +86,7 @@ void SimpleSwitch::transmit_thread() {
   while (1) {
     std::unique_ptr<Packet> packet;
     output_buffer.pop_back(&packet);
-    ELOGGER->packet_out(*packet);
+    BMELOG(packet_out, *packet);
     BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                     packet->get_data_size(), packet->get_egress_port());
     transmit_fn(packet->get_egress_port(),
@@ -132,14 +139,12 @@ void SimpleSwitch::pipeline_thread() {
     if (mgid != 0) {
       assert(mgid == 1);
       phv->get_field("intrinsic_metadata.mgid").set(0);
-      packet_id_t copy_id = 1;
       const auto pre_out = pre->replicate({mgid});
       for (const auto &out : pre_out) {
         egress_port = out.egress_port;
         if (ingress_port == egress_port) continue;  // pruning
         BMLOG_DEBUG_PKT(*packet, "Replicating packet on port {}", egress_port);
-        std::unique_ptr<Packet> packet_copy(new Packet(packet->clone()));
-        *packet_copy = packet->clone();
+        std::unique_ptr<Packet> packet_copy = packet->clone_with_phv_ptr();
         packet_copy->set_egress_port(egress_port);
         egress_mau->apply(packet_copy.get());
         deparser->deparse(packet_copy.get());

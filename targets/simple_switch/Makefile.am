@@ -15,7 +15,8 @@ AM_CPPFLAGS += \
 -I$(top_srcdir)/modules/bm_sim/include \
 -I$(top_srcdir)/modules/bm_runtime/include \
 -I$(srcdir)/thrift/src/ \
--I$(srcdir)/gen-cpp
+-I$(srcdir)/gen-cpp \
+$(DEBUG_CPPFLAGS)
 
 libsimpleswitch_la_LIBADD = \
 $(top_srcdir)/modules/bm_sim/libbmsim.la \

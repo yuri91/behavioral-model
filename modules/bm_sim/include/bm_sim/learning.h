@@ -18,6 +18,8 @@
  *
  */
 
+//! @file learning.h
+
 #ifndef BM_SIM_INCLUDE_BM_SIM_LEARNING_H_
 #define BM_SIM_INCLUDE_BM_SIM_LEARNING_H_
 
@@ -37,6 +39,13 @@
 #include "bytecontainer.h"
 #include "transport.h"
 
+namespace bm {
+
+// TODO(antonin): automate learning (i.e. make it target-independent)?
+
+//! Enables learning in the switch. For now it is the responsibility of the
+//! switch (look at the simple switch target for an example) to invoke the
+//! learn() method, which will send out the learning notifications.
 class LearnEngine {
  public:
   typedef int list_id_t;
@@ -45,16 +54,17 @@ class LearnEngine {
   typedef struct {
     char sub_topic[4];
     int switch_id;
+    int cxt_id;
     int list_id;
     uint64_t buffer_id;
     unsigned int num_samples;
-    char _padding[8];  // the header size for notifications is always 32 bytes
+    char _padding[4];  // the header size for notifications is always 32 bytes
   } __attribute__((packed)) msg_hdr_t;
 
   typedef std::function<void(const msg_hdr_t &, size_t,
                              std::unique_ptr<char[]>, void *)> LearnCb;
 
-  explicit LearnEngine(int device_id = 0);
+  explicit LearnEngine(int device_id = 0, int cxt_id = 0);
 
   void list_create(list_id_t list_id,
                    size_t max_samples = 1, unsigned int timeout_ms = 1000);
@@ -71,6 +81,13 @@ class LearnEngine {
 
   void list_init(list_id_t list_id);
 
+  //! Performs learning on the packet. Needs to be called by the target after a
+  //! learning-enabled pipeline has been applied on the packet. See the simple
+  //! switch implementation for an example.
+  //!
+  //! The \p list_id should be mapped to a field list in the JSON fed into the
+  //! switch. Since learning is still not well-standardized in P4, this process
+  //! is a little bit hacky for now.
   void learn(list_id_t list_id, const Packet &pkt);
 
   void ack(list_id_t list_id, buffer_id_t buffer_id, int sample_id);
@@ -125,7 +142,7 @@ class LearnEngine {
     enum class LearnMode {NONE, WRITER, CB};
 
    public:
-    LearnList(list_id_t list_id, int device_id,
+    LearnList(list_id_t list_id, int device_id, int cxt_id,
               size_t max_samples, unsigned int timeout);
 
     void init();
@@ -161,6 +178,7 @@ class LearnEngine {
     list_id_t list_id;
 
     int device_id;
+    int cxt_id;
 
     LearnSampleBuilder builder{};
     std::vector<char> buffer{};
@@ -195,8 +213,11 @@ class LearnEngine {
 
  private:
   int device_id{};
+  int cxt_id{};
   // LearnList is not movable because of the mutex, I am using pointers
   std::unordered_map<list_id_t, std::unique_ptr<LearnList> > learn_lists{};
 };
+
+}  // namespace bm
 
 #endif  // BM_SIM_INCLUDE_BM_SIM_LEARNING_H_

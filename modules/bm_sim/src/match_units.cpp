@@ -26,6 +26,8 @@
 #include "bm_sim/match_tables.h"
 #include "bm_sim/logger.h"
 
+namespace bm {
+
 #define HANDLE_VERSION(h) (h >> 32)
 #define HANDLE_INTERNAL(h) (h & 0xffffffff)
 #define HANDLE_SET(v, i) ((((uint64_t) v) << 32) | i)
@@ -79,6 +81,18 @@ MatchUnitAbstract_::reset_counters() {
   for (EntryMeta &meta : entry_meta) {
     meta.counter.reset_counter();
   }
+}
+
+void
+MatchUnitAbstract_::set_direct_meters(MeterArray *meter_array) {
+  assert(meter_array);
+  assert(size == meter_array->size());
+  direct_meters = meter_array;
+}
+
+Meter &
+MatchUnitAbstract_::get_meter(entry_handle_t handle) {
+  return direct_meters->at(HANDLE_INTERNAL(handle));
 }
 
 MatchErrorCode
@@ -207,9 +221,16 @@ MatchUnitExact<V>::add_entry_(const std::vector<MatchKeyParam> &match_key,
   if (new_key.size() != this->nbytes_key)
     return MatchErrorCode::BAD_MATCH_KEY;
 
+  // needs to go before duplicate check, because 2 different user keys can
+  // become the same key. We would then have a porblem when erasing the key from
+  // the hash map.
+  // TODO(antonin): maybe change this by modifying delete_entry method
+  this->match_key_builder.apply_big_mask(&new_key);
+
   // check if the key is already present
   if (entries_map.find(new_key) != entries_map.end())
     return MatchErrorCode::DUPLICATE_ENTRY;
+
 
   internal_handle_t handle_;
   MatchErrorCode status = this->get_and_set_handle(&handle_);
@@ -335,6 +356,9 @@ MatchUnitLPM<V>::add_entry_(const std::vector<MatchKeyParam> &match_key,
 
   if (new_key.size() != this->nbytes_key)
     return MatchErrorCode::BAD_MATCH_KEY;
+
+  // TODO(antonin): does this really make sense for a LPM table?
+  this->match_key_builder.apply_big_mask(&new_key);
 
   // check if the key is already present
   if (entries_trie.has_prefix(new_key, prefix_length))
@@ -520,6 +544,9 @@ MatchUnitTernary<V>::add_entry_(const std::vector<MatchKeyParam> &match_key,
   // in theory I just need to do that for TERNARY MatchKeyParam's...
   format_ternary_key(&new_key, new_mask);
 
+  // TODO(antonin): does this really make sense for a ternary table?
+  this->match_key_builder.apply_big_mask(&new_key);
+
   // check if the key is already present
   if (has_rule(new_key, new_mask, priority))
     return MatchErrorCode::DUPLICATE_ENTRY;
@@ -627,3 +654,5 @@ template class MatchUnitLPM<MatchTableIndirect::IndirectIndex>;
 
 template class MatchUnitTernary<MatchTableAbstract::ActionEntry>;
 template class MatchUnitTernary<MatchTableIndirect::IndirectIndex>;
+
+}  // namespace bm

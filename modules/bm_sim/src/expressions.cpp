@@ -27,6 +27,8 @@
 #include "bm_sim/expressions.h"
 #include "bm_sim/phv.h"
 
+namespace bm {
+
 ExprOpcodesMap::ExprOpcodesMap() {
   opcodes_map = {
     {"load_field", ExprOpcode::LOAD_FIELD},
@@ -408,5 +410,7 @@ ArithExpression VLHeaderExpression::resolve(header_id_t header_id) {
       op.field.header = header_id;
     }
   }
-  return std::move(new_expr);
+  return new_expr;
 }
+
+}  // namespace bm

@@ -16,6 +16,12 @@ AS_IF([test "x$enable_coverage" = "xyes"], [
 
 AC_SUBST([COVERAGE_FLAGS])
 
+AC_ARG_WITH([targets],
+    AS_HELP_STRING([--without-targets], [Do not build targets]),
+    [], [want_targets=yes])
+
+AM_CONDITIONAL([COND_TARGETS], [test "$want_targets" = yes])
+
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
@@ -38,7 +44,9 @@ AC_SUBST([PICKY_CXXFLAGS])
 AC_SUBST([PICKY_CFLAGS])
 AC_SUBST([DEBUG_CPPFLAGS])
 
-AC_SUBST([AM_CPPFLAGS], ["-I\$(top_srcdir)/modules/bf_lpm_trie/include \
+# for now, BMELOG_ON is defined by default, since it is required for some tests
+AC_SUBST([AM_CPPFLAGS], ["-DBMELOG_ON \
+                          -I\$(top_srcdir)/modules/bf_lpm_trie/include \
                           -isystem\$(top_srcdir)/third_party/jsoncpp/include \
                           -isystem\$(top_srcdir)/third_party/spdlog/include \
                           -I\$(top_srcdir)/modules/BMI/include"])

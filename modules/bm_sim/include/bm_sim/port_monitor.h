@@ -19,17 +19,25 @@
  *
  */
 
+//! @file port_monitor.h
+
 #ifndef BM_SIM_INCLUDE_BM_SIM_PORT_MONITOR_H_
 #define BM_SIM_INCLUDE_BM_SIM_PORT_MONITOR_H_
 
 #include <memory>
 
+namespace bm {
+
+//! Used by DevMgr to monitor the ports attached to the switch
 class PortMonitorIface {
  public:
+  //! Representation of a port number
   typedef unsigned int port_t;
 
+  //! Represents the status of a port
   enum class PortStatus { PORT_ADDED, PORT_REMOVED, PORT_UP, PORT_DOWN };
 
+  //! Signature of the cb function to call when a port status changes
   typedef std::function<void(port_t port_num, const PortStatus status)>
       PortStatusCb;
 
@@ -70,5 +78,7 @@ class PortMonitorIface {
 
   virtual void stop_() = 0;
 };
+
+}  // namespace bm
 
 #endif  // BM_SIM_INCLUDE_BM_SIM_PORT_MONITOR_H_

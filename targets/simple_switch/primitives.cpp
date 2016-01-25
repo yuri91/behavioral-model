@@ -18,8 +18,19 @@
  *
  */
 
-#ifndef SIMPLE_SWITCH_PRIMITIVES_H_
-#define SIMPLE_SWITCH_PRIMITIVES_H_
+#include "bm_sim/actions.h"
+
+template <typename... Args>
+using ActionPrimitive = bm::ActionPrimitive<Args...>;
+
+using bm::Data;
+using bm::Field;
+using bm::Header;
+using bm::MeterArray;
+using bm::CounterArray;
+using bm::RegisterArray;
+using bm::NamedCalculation;
+using bm::HeaderStack;
 
 class modify_field : public ActionPrimitive<Field &, const Data &> {
   void operator ()(Field &f, const Data &d) {
@@ -298,4 +309,33 @@ class pop : public ActionPrimitive<HeaderStack &, const Data &> {
 
 REGISTER_PRIMITIVE(pop);
 
-#endif  // SIMPLE_SWITCH_PRIMITIVES_H_
+// I cannot name this "truncate" and register it with the usual
+// REGISTER_PRIMITIVE macro, because of a name conflict:
+//
+// In file included from /usr/include/boost/config/stdlib/libstdcpp3.hpp:77:0,
+//   from /usr/include/boost/config.hpp:44,
+//   from /usr/include/boost/cstdint.hpp:36,
+//   from /usr/include/boost/multiprecision/number.hpp:9,
+//   from /usr/include/boost/multiprecision/gmp.hpp:9,
+//   from ../../modules/bm_sim/include/bm_sim/bignum.h:25,
+//   from ../../modules/bm_sim/include/bm_sim/data.h:32,
+//   from ../../modules/bm_sim/include/bm_sim/fields.h:28,
+//   from ../../modules/bm_sim/include/bm_sim/phv.h:34,
+//   from ../../modules/bm_sim/include/bm_sim/actions.h:34,
+//   from primitives.cpp:21:
+//     /usr/include/unistd.h:993:12: note: declared here
+//     extern int truncate (const char *__file, __off_t __length)
+class truncate_ : public ActionPrimitive<const Data &> {
+  void operator ()(const Data &truncated_length) {
+    get_packet().truncate(truncated_length.get<size_t>());
+  }
+};
+
+REGISTER_PRIMITIVE_W_NAME("truncate", truncate_);
+
+// dummy function, which ensures that this unit is not discarded by the linker
+// it is being called by the constructor of SimpleSwitch
+// the previous alternative was to have all the primitives in a header file (the
+// primitives could also be placed in simple_switch.cpp directly), but I need
+// this dummy function if I want to keep the primitives in their own file
+int import_primitives() { }

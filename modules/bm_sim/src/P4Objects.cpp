@@ -25,6 +25,8 @@
 #include <vector>
 #include <set>
 
+namespace bm {
+
 using std::unique_ptr;
 using std::string;
 
@@ -69,16 +71,16 @@ P4Objects::build_expression(const Json::Value &json_expression,
 }
 
 int
-P4Objects::init_objects(std::istream &is, int device_id,
+P4Objects::init_objects(std::istream *is, int device_id, size_t cxt_id,
                         std::shared_ptr<TransportIface> notifications_transport,
                         const std::set<header_field_pair> &required_fields,
                         const std::set<header_field_pair> &arith_fields) {
   Json::Value cfg_root;
-  is >> cfg_root;
+  (*is) >> cfg_root;
 
   if (!notifications_transport) {
-    notifications_transport = std::make_shared<TransportNULL>();
-    notifications_transport->open("dummy");
+    notifications_transport = std::shared_ptr<TransportIface>(
+        TransportIface::make_dummy());
   }
 
   // header types
@@ -208,6 +210,7 @@ P4Objects::init_objects(std::istream &is, int device_id,
           assert(dest_type == "field");
           const auto dest = field_info(cfg_dest["value"][0].asString(),
                                        cfg_dest["value"][1].asString());
+          phv_factory.enable_field_arith(std::get<0>(dest), std::get<1>(dest));
 
           const string &src_type = cfg_src["type"].asString();
           if (src_type == "field") {
@@ -216,6 +219,7 @@ P4Objects::init_objects(std::istream &is, int device_id,
             parse_state->add_set_from_field(
               std::get<0>(dest), std::get<1>(dest),
               std::get<0>(src), std::get<1>(src));
+            phv_factory.enable_field_arith(std::get<0>(src), std::get<1>(src));
           } else if (src_type == "hexstr") {
             parse_state->add_set_from_data(
               std::get<0>(dest), std::get<1>(dest),
@@ -357,7 +361,32 @@ P4Objects::init_objects(std::istream &is, int device_id,
     add_named_calculation(name, unique_ptr<NamedCalculation>(calculation));
   }
 
+  // counter arrays
+
+  const Json::Value &cfg_counter_arrays = cfg_root["counter_arrays"];
+  for (const auto &cfg_counter_array : cfg_counter_arrays) {
+    const string name = cfg_counter_array["name"].asString();
+    const p4object_id_t id = cfg_counter_array["id"].asInt();
+    const size_t size = cfg_counter_array["size"].asUInt();
+    const Json::Value false_value(false);
+    const bool is_direct =
+      cfg_counter_array.get("is_direct", false_value).asBool();
+    if (is_direct) continue;
+
+    CounterArray *counter_array = new CounterArray(name, id, size);
+    add_counter_array(name, unique_ptr<CounterArray>(counter_array));
+  }
+
   // meter arrays
+
+  // store direct meter info until the table gets created
+  struct DirectMeterArray {
+    MeterArray *meter;
+    header_id_t header;
+    int offset;
+  };
+
+  std::unordered_map<std::string, DirectMeterArray> direct_meters;
 
   const Json::Value &cfg_meter_arrays = cfg_root["meter_arrays"];
   for (const auto &cfg_meter_array : cfg_meter_arrays) {
@@ -378,22 +407,20 @@ P4Objects::init_objects(std::istream &is, int device_id,
     MeterArray *meter_array = new MeterArray(name, id,
                                              meter_type, rate_count, size);
     add_meter_array(name, unique_ptr<MeterArray>(meter_array));
-  }
 
-  // counter arrays
-
-  const Json::Value &cfg_counter_arrays = cfg_root["counter_arrays"];
-  for (const auto &cfg_counter_array : cfg_counter_arrays) {
-    const string name = cfg_counter_array["name"].asString();
-    const p4object_id_t id = cfg_counter_array["id"].asInt();
-    const size_t size = cfg_counter_array["size"].asUInt();
-    const Json::Value false_value(false);
     const bool is_direct =
-      cfg_counter_array.get("is_direct", false_value).asBool();
-    if (is_direct) continue;
+        cfg_meter_array.get("is_direct", Json::Value(false)).asBool();
+    if (is_direct) {
+      const Json::Value &cfg_target_field = cfg_meter_array["result_target"];
+      const string header_name = cfg_target_field[0].asString();
+      header_id_t header_id = get_header_id(header_name);
+      const string field_name = cfg_target_field[1].asString();
+      int field_offset = get_field_offset(header_id, field_name);
 
-    CounterArray *counter_array = new CounterArray(name, id, size);
-    add_counter_array(name, unique_ptr<CounterArray>(counter_array));
+      DirectMeterArray direct_meter =
+          {get_meter_array(name), header_id, field_offset};
+      direct_meters.emplace(name, direct_meter);
+    }
   }
 
   // register arrays
@@ -510,7 +537,7 @@ P4Objects::init_objects(std::istream &is, int device_id,
   // pipelines
 
   ageing_monitor = std::unique_ptr<AgeingMonitor>(
-      new AgeingMonitor(device_id, notifications_transport));
+      new AgeingMonitor(device_id, cxt_id, notifications_transport));
 
   const Json::Value &cfg_pipelines = cfg_root["pipelines"];
   for (const auto &cfg_pipeline : cfg_pipelines) {
@@ -527,20 +554,48 @@ P4Objects::init_objects(std::istream &is, int device_id,
 
       MatchKeyBuilder key_builder;
       const Json::Value &cfg_match_key = cfg_table["key"];
+
+      auto add_f = [this, &key_builder](const Json::Value &cfg_f) {
+        const Json::Value &cfg_key_field = cfg_f["target"];
+        const string header_name = cfg_key_field[0].asString();
+        header_id_t header_id = get_header_id(header_name);
+        const string field_name = cfg_key_field[1].asString();
+        int field_offset = get_field_offset(header_id, field_name);
+        if ((!cfg_f.isMember("mask")) || cfg_f["mask"].isNull()) {
+          key_builder.push_back_field(header_id, field_offset,
+                                      get_field_bits(header_id, field_offset));
+        } else {
+          const Json::Value &cfg_key_mask = cfg_f["mask"];
+          key_builder.push_back_field(header_id, field_offset,
+                                      get_field_bits(header_id, field_offset),
+                                      ByteContainer(cfg_key_mask.asString()));
+        }
+      };
+
+      bool has_lpm = false;
       for (const auto &cfg_key_entry : cfg_match_key) {
         const string match_type = cfg_key_entry["match_type"].asString();
-        const Json::Value &cfg_key_field = cfg_key_entry["target"];
-        if (match_type == "valid") {
+        if (match_type == "lpm") {
+          if (has_lpm) {
+            outstream << "Table " << table_name << "features 2 LPM match fields"
+                      << std::endl;
+            return 1;
+          }
+          has_lpm = true;
+        } else if (match_type == "valid") {
+          const Json::Value &cfg_key_field = cfg_key_entry["target"];
           const string header_name = cfg_key_field.asString();
           header_id_t header_id = get_header_id(header_name);
           key_builder.push_back_valid_header(header_id);
         } else {
-          const string header_name = cfg_key_field[0].asString();
-          header_id_t header_id = get_header_id(header_name);
-          const string field_name = cfg_key_field[1].asString();
-          int field_offset = get_field_offset(header_id, field_name);
-          key_builder.push_back_field(header_id, field_offset,
-                                      get_field_bits(header_id, field_offset));
+          add_f(cfg_key_entry);
+        }
+      }
+
+      for (const auto &cfg_key_entry : cfg_match_key) {
+        const string match_type = cfg_key_entry["match_type"].asString();
+        if (match_type == "lpm") {
+          add_f(cfg_key_entry);
         }
       }
 
@@ -604,6 +659,15 @@ P4Objects::init_objects(std::istream &is, int device_id,
         mt_indirect_ws->set_hash(std::move(calc));
       } else {
         assert(0 && "invalid table type");
+      }
+
+      // maintains backwards compatibility
+      if (cfg_table.isMember("direct_meters") &&
+          !cfg_table["direct_meters"].isNull()) {
+        const std::string meter_name = cfg_table["direct_meters"].asString();
+        const DirectMeterArray &direct_meter = direct_meters[meter_name];
+        table->get_match_table()->set_direct_meters(
+            direct_meter.meter, direct_meter.header, direct_meter.offset);
       }
 
       if (with_ageing) ageing_monitor->add_table(table->get_match_table());
@@ -707,7 +771,8 @@ P4Objects::init_objects(std::istream &is, int device_id,
 
   // learn lists
 
-  learn_engine = std::unique_ptr<LearnEngine>(new LearnEngine(device_id));
+  learn_engine = std::unique_ptr<LearnEngine>(
+      new LearnEngine(device_id, cxt_id));
 
   const Json::Value &cfg_learn_lists = cfg_root["learn_lists"];
 
@@ -793,11 +858,6 @@ P4Objects::init_objects(std::istream &is, int device_id,
 }
 
 void
-P4Objects::destroy_objects() {
-  Packet::unset_phv_factory();
-}
-
-void
 P4Objects::reset_state() {
   // TODO(antonin): is this robust?
   for (auto &table : match_action_tables_map) {
@@ -866,3 +926,5 @@ P4Objects::check_hash(const std::string &name) const {
   if (!h) outstream << "Unknown hash algorithm: " << name  << std::endl;
   return h;
 }
+
+}  // namespace bm

@@ -23,10 +23,15 @@
 #include <memory>
 #include "bm_sim/tables.h"
 
+using namespace bm;
+
 using testing::Types;
 
 using std::string;
 using std::to_string;
+
+using std::chrono::milliseconds;
+using std::this_thread::sleep_until;
 
 typedef MatchTableAbstract::ActionEntry ActionEntry;
 typedef MatchUnitExact<ActionEntry> MUExact;
@@ -35,7 +40,9 @@ typedef MatchUnitTernary<ActionEntry> MUTernary;
 
 template <typename MUType>
 class TableSizeTwo : public ::testing::Test {
-protected:
+ protected:
+  static constexpr size_t t_size = 2u;
+
   PHVFactory phv_factory;
 
   MatchKeyBuilder key_builder;
@@ -48,8 +55,11 @@ protected:
   header_id_t testHeader1{0}, testHeader2{1};
   ActionFn action_fn;
 
+  std::unique_ptr<PHVSourceIface> phv_source{nullptr};
+
   TableSizeTwo()
-    : testHeaderType("test_t", 0), action_fn("actionA", 0) {
+      : testHeaderType("test_t", 0), action_fn("actionA", 0),
+        phv_source(PHVSourceIface::make_phv_source()) {
     testHeaderType.push_back_field("f16", 16);
     testHeaderType.push_back_field("f48", 48);
     phv_factory.push_back_header("test1", testHeader1, testHeaderType);
@@ -63,13 +73,13 @@ protected:
     std::unique_ptr<MUType> match_unit;
 
     // true enables counters
-    match_unit = std::unique_ptr<MUType>(new MUType(2, key_builder));
+    match_unit = std::unique_ptr<MUType>(new MUType(t_size, key_builder));
     table = std::unique_ptr<MatchTable>(
       new MatchTable("test_table", 0, std::move(match_unit), true)
     );
     table->set_next_node(0, nullptr);
 
-    match_unit = std::unique_ptr<MUType>(new MUType(2, key_builder_w_valid));
+    match_unit = std::unique_ptr<MUType>(new MUType(t_size, key_builder_w_valid));
     table_w_valid = std::unique_ptr<MatchTable>(
       new MatchTable("test_table", 0, std::move(match_unit))
     );
@@ -85,19 +95,20 @@ protected:
 
   Packet get_pkt(int length) {
     // dummy packet, won't be parsed
-    Packet packet = Packet::make_new(0, 0, length, PacketBuffer(length * 2));
+    Packet packet = Packet::make_new(
+        length, PacketBuffer(length * 2), phv_source.get());
     packet.get_phv()->get_header(testHeader1).mark_valid();
     packet.get_phv()->get_header(testHeader2).mark_valid();
+    // return std::move(packet);
+    // enable NVRO
     return packet;
   }
 
   virtual void SetUp() {
-    Packet::set_phv_factory(phv_factory);
+    phv_source->set_phv_factory(0, &phv_factory);
   }
 
-  virtual void TearDown() {
-    Packet::unset_phv_factory();
-  }
+  // virtual void TearDown() { }
 };
 
 template<>
@@ -367,6 +378,87 @@ TYPED_TEST(TableSizeTwo, Counters) {
   ASSERT_EQ(1u, counter_packets);
 }
 
+TYPED_TEST(TableSizeTwo, Meters) {
+  typedef std::chrono::high_resolution_clock clock;
+
+  std::string key_ = "\x0a\xba";
+  ByteContainer key("0x0aba");
+  entry_handle_t handle;
+  entry_handle_t bad_handle = 999u;
+  MatchErrorCode rc;
+
+  Packet pkt = this->get_pkt(64);
+  Field &f = pkt.get_phv()->get_field(this->testHeader1, 0);
+  f.set("0xaba");
+
+  const Field &f_c = pkt.get_phv()->get_field(this->testHeader2, 0);
+
+  const Meter::color_t GREEN = 0;
+  const Meter::color_t RED = 1;
+
+  // 1 rate, same size as table
+  MeterArray meters("meter_test", 0, Meter::MeterType::PACKETS, 1,
+                    this->t_size);
+
+  rc = this->add_entry(key_, &handle);
+  ASSERT_EQ(MatchErrorCode::SUCCESS, rc);
+  ASSERT_EQ(1u, this->table->get_num_entries());
+
+  std::vector<Meter::rate_config_t> rates = {};
+  rc = this->table->set_meter_rates(handle, rates);
+  ASSERT_EQ(MatchErrorCode::METERS_DISABLED, rc);
+  this->table->set_direct_meters(&meters, this->testHeader2, 0);
+
+  std::vector<Meter::color_t> output;
+  output.reserve(32);
+
+  Meter::reset_global_clock();
+
+  clock::time_point next_stop = clock::now();
+
+  // meter rates not configured yet, all packets should be 'GREEN'
+
+  for (size_t i = 0; i < 20; i++) {
+    this->table->apply_action(&pkt);
+    Meter::color_t color = f_c.get_int();
+    output.push_back(color);
+    next_stop += milliseconds(100);
+    sleep_until(next_stop);
+  }
+
+  std::vector<Meter::color_t> expected(20, GREEN);
+  ASSERT_EQ(expected, output);
+
+  rc = this->table->set_meter_rates(handle, rates);
+  ASSERT_EQ(MatchErrorCode::ERROR, rc);  // because rates vector empty
+
+  // 1 packet per second, burst size of 2 packets
+  Meter::rate_config_t one_rate = {0.000001, 2};
+  rates.push_back(one_rate);
+  rc = this->table->set_meter_rates(handle, rates);
+  ASSERT_EQ(MatchErrorCode::SUCCESS, rc);
+
+  Meter::reset_global_clock();
+
+  output.clear();
+
+  std::vector<int> int_ms = {10, 10, 1100, 0};
+
+  for (int ms : int_ms) {
+    this->table->apply_action(&pkt);
+    Meter::color_t color = f_c.get_int();
+    output.push_back(color);
+    next_stop += milliseconds(ms);
+    sleep_until(next_stop);
+  }
+
+  expected = {GREEN, GREEN, RED, GREEN};
+  ASSERT_EQ(expected, output);
+
+  rc = this->table->set_meter_rates(bad_handle, rates);
+  ASSERT_EQ(MatchErrorCode::INVALID_HANDLE, rc);
+}
+
 TYPED_TEST(TableSizeTwo, Valid) {
   std::string key_ = "\x0a\xba";
   bool valid = true;
@@ -384,7 +476,7 @@ TYPED_TEST(TableSizeTwo, Valid) {
   f.set("0xaba");
   Header &h2 = pkt.get_phv()->get_header(this->testHeader2);
   EXPECT_TRUE(h2.is_valid());
-  
+
   h2.mark_invalid();
 
   this->table_w_valid->lookup(pkt, &hit, &lookup_handle);
@@ -428,10 +520,10 @@ TYPED_TEST(TableSizeTwo, ResetState) {
 
 
 class TableIndirect : public ::testing::Test {
-protected:
+ protected:
   typedef MatchTableIndirect::mbr_hdl_t mbr_hdl_t;
 
-protected:
+ protected:
   PHVFactory phv_factory;
 
   MatchKeyBuilder key_builder;
@@ -441,10 +533,13 @@ protected:
   header_id_t testHeader1{0}, testHeader2{1};
   ActionFn action_fn;
 
+  std::unique_ptr<PHVSourceIface> phv_source{nullptr};
+
   static const size_t table_size = 128;
 
-  TableIndirect() 
-    : testHeaderType("test_t", 0), action_fn("actionA", 0) {
+  TableIndirect()
+      : testHeaderType("test_t", 0), action_fn("actionA", 0),
+        phv_source(PHVSourceIface::make_phv_source()) {
     testHeaderType.push_back_field("f16", 16);
     testHeaderType.push_back_field("f48", 48);
     phv_factory.push_back_header("test1", testHeader1, testHeaderType);
@@ -481,19 +576,20 @@ protected:
 
   Packet get_pkt(int length) {
     // dummy packet, won't be parsed
-    Packet packet = Packet::make_new(0, 0, length, PacketBuffer(length * 2));
+    Packet packet = Packet::make_new(
+        length, PacketBuffer(length * 2), phv_source.get());
     packet.get_phv()->get_header(testHeader1).mark_valid();
     packet.get_phv()->get_header(testHeader2).mark_valid();
+    // return std::move(packet);
+    // enable NVRO
     return packet;
   }
 
   virtual void SetUp() {
-    Packet::set_phv_factory(phv_factory);
+    phv_source->set_phv_factory(0, &phv_factory);
   }
 
-  virtual void TearDown() {
-    Packet::unset_phv_factory();
-  }
+  // virtual void TearDown() { }
 };
 
 TEST_F(TableIndirect, AddMember) {
@@ -506,7 +602,7 @@ TEST_F(TableIndirect, AddMember) {
     ASSERT_EQ(rc, MatchErrorCode::SUCCESS);
     // this is implementation specific, is it a good idea ?
     ASSERT_EQ(i, mbr);
-    ASSERT_EQ(i + 1, table->get_num_members());  
+    ASSERT_EQ(i + 1, table->get_num_members());
   }
 }
 
@@ -523,7 +619,7 @@ TEST_F(TableIndirect, AddEntry) {
 
   rc = add_entry(key, mbr_2, &handle);
   ASSERT_EQ(MatchErrorCode::INVALID_MBR_HANDLE, rc);
-  ASSERT_EQ(0u, table->get_num_entries());  
+  ASSERT_EQ(0u, table->get_num_entries());
 
   static_assert(table_size < 255, "");
 
@@ -535,7 +631,7 @@ TEST_F(TableIndirect, AddEntry) {
     ASSERT_EQ(MatchErrorCode::DUPLICATE_ENTRY, rc);
     // this is implementation specific, is it a good idea ?
     ASSERT_EQ(i, handle);
-    ASSERT_EQ(i + 1, table->get_num_entries());  
+    ASSERT_EQ(i + 1, table->get_num_entries());
   }
 
   rc = add_entry("\xff\xff", mbr_1, &handle);
@@ -652,7 +748,7 @@ TEST_F(TableIndirect, ModifyMember) {
   f.set("0xaba");
 
   // I don't have a way of inspecting a member (yet?), so I perform a lookup
-  // instead 
+  // instead
   rc = add_member(data_1, &mbr);
   ASSERT_EQ(rc, MatchErrorCode::SUCCESS);
 
@@ -708,11 +804,11 @@ TEST_F(TableIndirect, ResetState) {
 
 
 class TableIndirectWS : public ::testing::Test {
-protected:
+ protected:
   typedef MatchTableIndirect::mbr_hdl_t mbr_hdl_t;
   typedef MatchTableIndirectWS::grp_hdl_t grp_hdl_t;
 
-protected:
+ protected:
   PHVFactory phv_factory;
 
   MatchKeyBuilder key_builder;
@@ -722,14 +818,17 @@ protected:
   header_id_t testHeader1{0}, testHeader2{1};
   ActionFn action_fn;
 
+  std::unique_ptr<PHVSourceIface> phv_source{nullptr};
+
   // I am not seeding this on purpose, at least for now
   std::mt19937 gen;
   std::uniform_int_distribution<unsigned int> dis;
 
   static const size_t table_size = 128;
 
-  TableIndirectWS() 
-    : testHeaderType("test_t", 0), action_fn("actionA", 0) {
+  TableIndirectWS()
+      : testHeaderType("test_t", 0), action_fn("actionA", 0),
+        phv_source(PHVSourceIface::make_phv_source()) {
     testHeaderType.push_back_field("f16", 16);
     testHeaderType.push_back_field("f48", 48);
     phv_factory.push_back_header("test1", testHeader1, testHeaderType);
@@ -744,7 +843,7 @@ protected:
     table->set_next_node(0, nullptr);
 
     BufBuilder builder;
-    
+
     builder.push_back_field(testHeader1, 1); // h1.f48
     builder.push_back_field(testHeader2, 0); // h2.f16
     builder.push_back_field(testHeader2, 1); // h2.f48
@@ -778,19 +877,20 @@ protected:
 
   Packet get_pkt(int length) {
     // dummy packet, won't be parsed
-    Packet packet = Packet::make_new(0, 0, length, PacketBuffer(length * 2));
+    Packet packet = Packet::make_new(
+        length, PacketBuffer(length * 2), phv_source.get());
     packet.get_phv()->get_header(testHeader1).mark_valid();
     packet.get_phv()->get_header(testHeader2).mark_valid();
+    // return std::move(packet);
+    // enable NVRO
     return packet;
   }
 
   virtual void SetUp() {
-    Packet::set_phv_factory(phv_factory);
+    phv_source->set_phv_factory(0, &phv_factory);
   }
 
-  virtual void TearDown() {
-    Packet::unset_phv_factory();
-  }
+  // virtual void TearDown() { }
 };
 
 TEST_F(TableIndirectWS, Group) {
@@ -968,4 +1068,163 @@ TEST_F(TableIndirectWS, LookupEntryWS) {
   ASSERT_EQ(MatchErrorCode::SUCCESS, rc);
   rc = table->delete_member(mbr_2);
   ASSERT_EQ(MatchErrorCode::SUCCESS, rc);
+}
+
+template <typename MUType>
+class TableBigMask : public ::testing::Test {
+ protected:
+  PHVFactory phv_factory;
+
+  MatchKeyBuilder key_builder;
+  ByteContainer mask_2{"0x0000ff0000ff"};
+  std::unique_ptr<MatchTable> table;
+
+  HeaderType testHeaderType;
+  header_id_t testHeader1{0}, testHeader2{1};
+  ActionFn action_fn;
+
+  std::unique_ptr<PHVSourceIface> phv_source{nullptr};
+
+  void make_key_builder();
+
+  TableBigMask()
+      : testHeaderType("test_t", 0), action_fn("actionA", 0),
+        phv_source(PHVSourceIface::make_phv_source()) {
+    testHeaderType.push_back_field("f16", 16);
+    testHeaderType.push_back_field("f48", 48);
+    phv_factory.push_back_header("test1", testHeader1, testHeaderType);
+    phv_factory.push_back_header("test2", testHeader2, testHeaderType);
+
+    make_key_builder();
+
+    std::unique_ptr<MUType> match_unit;
+
+    // false: no counters
+    match_unit = std::unique_ptr<MUType>(new MUType(2, key_builder));
+    table = std::unique_ptr<MatchTable>(
+      new MatchTable("test_table", 0, std::move(match_unit), false)
+    );
+    table->set_next_node(0, nullptr);
+  }
+
+  MatchErrorCode add_entry(const std::string &key_1,
+                           const std::string &key_2,
+			   entry_handle_t *handle);
+
+  Packet get_pkt(int length) {
+    // dummy packet, won't be parsed
+    Packet packet = Packet::make_new(
+        length, PacketBuffer(length * 2), phv_source.get());
+    packet.get_phv()->get_header(testHeader1).mark_valid();
+    packet.get_phv()->get_header(testHeader2).mark_valid();
+    // return std::move(packet);
+    // enable NVRO
+    return packet;
+  }
+
+  virtual void SetUp() {
+    phv_source->set_phv_factory(0, &phv_factory);
+  }
+
+  // virtual void TearDown() { }
+};
+
+template<>
+MatchErrorCode
+TableBigMask<MUExact>::add_entry(const std::string &key_1,
+                                 const std::string &key_2,
+				 entry_handle_t *handle) {
+  ActionData action_data;
+  std::vector<MatchKeyParam> match_key;
+  match_key.emplace_back(MatchKeyParam::Type::EXACT, key_1);
+  match_key.emplace_back(MatchKeyParam::Type::EXACT, key_2);
+  return table->add_entry(match_key, &action_fn, action_data, handle);
+}
+
+template<>
+void
+TableBigMask<MUExact>::make_key_builder() {
+  key_builder.push_back_field(testHeader1, 0, 16);
+  key_builder.push_back_field(testHeader2, 1, 48, mask_2);
+}
+
+template<>
+MatchErrorCode
+TableBigMask<MULPM>::add_entry(const std::string &key_1,
+                               const std::string &key_2,
+			       entry_handle_t *handle) {
+  ActionData action_data;
+  std::vector<MatchKeyParam> match_key;
+  match_key.emplace_back(MatchKeyParam::Type::LPM, key_1, 16);
+  match_key.emplace_back(MatchKeyParam::Type::EXACT, key_2);
+  return table->add_entry(match_key, &action_fn, action_data, handle);
+}
+
+template<>
+void
+TableBigMask<MULPM>::make_key_builder() {
+  key_builder.push_back_field(testHeader2, 1, 48, mask_2);
+  key_builder.push_back_field(testHeader1, 0, 16);
+}
+
+template<>
+MatchErrorCode
+TableBigMask<MUTernary>::add_entry(const std::string &key_1,
+                                   const std::string &key_2,
+				   entry_handle_t *handle) {
+  ActionData action_data;
+  std::vector<MatchKeyParam> match_key;
+  std::string mask_1 = "\xff\xff";
+  int priority = 1;
+  match_key.emplace_back(MatchKeyParam::Type::TERNARY,
+                         key_1, std::move(mask_1));
+  match_key.emplace_back(MatchKeyParam::Type::EXACT, key_2);
+  return table->add_entry(match_key, &action_fn, action_data, handle, priority);
+}
+
+template<>
+void
+TableBigMask<MUTernary>::make_key_builder() {
+  key_builder.push_back_field(testHeader1, 0, 16);
+  key_builder.push_back_field(testHeader2, 1, 48, mask_2);
+}
+
+typedef Types<MUExact,
+	      MULPM,
+	      MUTernary> TableTypes;
+
+TYPED_TEST_CASE(TableBigMask, TableTypes);
+
+
+  // ByteContainer big_mask("0x00ff0000ff0000ff");
+TYPED_TEST(TableBigMask, HitMiss) {
+  const std::string key_1 = "\x11\x22";
+  const std::string key_2 = "\x33\x44\x55\x66\x77\x88";
+
+  entry_handle_t handle_1;
+  entry_handle_t lookup_handle;
+  bool hit;
+  MatchErrorCode rc;
+
+  rc = this->add_entry(key_1, key_2, &handle_1);
+  ASSERT_EQ(rc, MatchErrorCode::SUCCESS);
+
+  Packet pkt = this->get_pkt(64);
+  Field &f_1 = pkt.get_phv()->get_field(this->testHeader1, 0);
+  Field &f_2 = pkt.get_phv()->get_field(this->testHeader2, 1);
+
+  f_1.set(key_1.c_str(), key_1.size());
+  f_2.set(key_2.c_str(), key_2.size());
+  this->table->lookup(pkt, &hit, &lookup_handle);
+  ASSERT_TRUE(hit);
+
+  const std::string key_2_hit = "\xaa\x44\x55\x66\x77\x88";
+  f_2.set(key_2_hit.c_str(), key_2_hit.size());
+  this->table->lookup(pkt, &hit, &lookup_handle);
+  ASSERT_TRUE(hit);
+
+  const std::string key_2_miss = "\x33\x44\x55\x66\x77\xaa";
+  f_2.set(key_2_miss.c_str(), key_2_miss.size());
+  this->table->lookup(pkt, &hit, &lookup_handle);
+  ASSERT_FALSE(hit);
 }

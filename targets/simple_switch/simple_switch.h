@@ -77,7 +77,7 @@ class SimpleSwitch : public Switch {
   typedef std::chrono::high_resolution_clock clock;
 
  public:
-  explicit SimpleSwitch(int max_port = 256);
+  explicit SimpleSwitch(int max_port = 80);
 
   int receive(int port_num, const char *buffer, int len) {
     static int pkt_id = 0;

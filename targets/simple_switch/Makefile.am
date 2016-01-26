@@ -18,6 +18,11 @@ AM_CPPFLAGS += \
 -I$(srcdir)/gen-cpp \
 $(DEBUG_CPPFLAGS)
 
+noinst_LTLIBRARIES = libsimpleswitch.la
+
+libsimpleswitch_la_SOURCES = \
+simple_switch.cpp simple_switch.h primitives.cpp
+
 libsimpleswitch_la_LIBADD = \
 $(top_builddir)/modules/bm_sim/libbmsim.la \
 $(top_builddir)/modules/bf_lpm_trie/libbflpmtrie.la \
@@ -26,11 +31,6 @@ $(top_builddir)/third_party/jsoncpp/libjson.la \
 -lboost_system -lboost_thread -lthrift -lboost_program_options
 
 libsimpleswitch_la_LDFLAGS = -pthread
-
-noinst_LTLIBRARIES = libsimpleswitch.la
-
-libsimpleswitch_la_SOURCES = \
-simple_switch.cpp simple_switch.h primitives.cpp
 
 sbin_PROGRAMS = simple_switch
 
@@ -45,11 +45,6 @@ simple_switch_LDFLAGS = -lsimpleswitch_thrift
 lib_LTLIBRARIES = libsimpleswitch_thrift.la
 
 libsimpleswitch_thrift_la_SOURCES = \
-	$(BUILT_SOURCES)
-
-libsswitch_la_CXXFLAGS = $(AM_CXXFLAGS)
-lib_LTLIBRARIES = libsswitch.la
-libsswitch_la_SOURCES = \
 	$(BUILT_SOURCES)
 
 # See http://www.gnu.org/software/automake/manual/html_node/Multiple-Outputs.html

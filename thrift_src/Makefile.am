@@ -32,7 +32,7 @@ $(simple_pre_lag_thrift_files)
 
 AUTOMAKE_OPTIONS = foreign no-dependencies subdir-objects
 
-lib_LTLIBRARIES = libruntimestubs.la
+noinst_LTLIBRARIES = libruntimestubs.la
 libruntimestubs_la_SOURCES = \
 	$(BUILT_SOURCES)
 

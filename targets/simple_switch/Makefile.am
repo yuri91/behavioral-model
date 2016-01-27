@@ -32,13 +32,11 @@ $(top_builddir)/third_party/jsoncpp/libjson.la \
 
 libsimpleswitch_la_LDFLAGS = -pthread
 
-noinst_LTLIBRARIES = libsimpleswitch.la
-
 sbin_PROGRAMS = simple_switch
 
 simple_switch_LDADD = \
 $(top_builddir)/modules/bm_runtime/libbmruntime.la \
-$(top_builddir)/thrift_src/libruntimestubs.la \
+$(top_builddir)/thrift_src/libbmthrift.la \
 libsimpleswitch.la
 
 simple_switch_SOURCES = main.cpp

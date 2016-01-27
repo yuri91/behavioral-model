@@ -28,7 +28,7 @@ using namespace bm;
 
 class SimplePreLAGHandler : virtual public SimplePreLAGIf {
 public:
-  SimplePreLAGHandler(SwitchWContexts *sw) 
+  SimplePreLAGHandler(SwitchWContexts *sw)
     : switch_(sw) {
     for (size_t cxt_id = 0; cxt_id < sw->get_nb_cxts(); cxt_id++) {
       auto pre = sw->get_cxt_component<McSimplePreLAG>(cxt_id);

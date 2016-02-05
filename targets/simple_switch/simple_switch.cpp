@@ -66,13 +66,18 @@ extern int import_primitives();
 SimpleSwitch::SimpleSwitch(int max_port)
   : Switch(false),  // enable_switch = false
     max_port(max_port),
-    input_buffer(1024), egress_buffers(max_port), output_buffer(128),
+    input_buffer(1024),
+#ifdef SSWITCH_PRIORITY_QUEUEING_ON
+    egress_buffers(max_port, nb_egress_threads,
+                   64, EgressThreadMapper(nb_egress_threads),
+                   SSWITCH_PRIORITY_QUEUEING_NB_QUEUES),
+#else
+    egress_buffers(max_port, nb_egress_threads,
+                   64, EgressThreadMapper(nb_egress_threads)),
+#endif
+    output_buffer(128),
     pre(new McSimplePreLAG()),
     start(clock::now()) {
-  for (int i = 0; i < max_port; i++) {
-    egress_buffers[i].set_capacity(64);
-  }
-
   add_component<McSimplePreLAG>(pre);
 
   add_required_field("standard_metadata", "ingress_port");
@@ -88,7 +93,7 @@ void
 SimpleSwitch::start_and_return() {
   std::thread t1(&SimpleSwitch::ingress_thread, this);
   t1.detach();
-  for (int i = 0; i < max_port; i++) {
+  for (size_t i = 0; i < nb_egress_threads; i++) {
     std::thread t2(&SimpleSwitch::egress_thread, this, i);
     t2.detach();
   }
@@ -123,10 +128,20 @@ SimpleSwitch::enqueue(int egress_port, std::unique_ptr<Packet> &&packet) {
     if (phv->has_header("queueing_metadata")) {
       phv->get_field("queueing_metadata.enq_timestamp").set(get_ts().count());
       phv->get_field("queueing_metadata.enq_qdepth")
-        .set(egress_buffers[egress_port].size());
+          .set(egress_buffers.size(egress_port));
     }
 
-    egress_buffers[egress_port].push_front(std::move(packet));
+#ifdef SSWITCH_PRIORITY_QUEUEING_ON
+    size_t priority =
+        phv->get_field(SSWITCH_PRIORITY_QUEUEING_SRC).get<size_t>();
+    if (priority >= SSWITCH_PRIORITY_QUEUEING_NB_QUEUES) {
+      bm::Logger::get()->error("Priority out of range, dropping packet");
+      return;
+    }
+    egress_buffers.push_front(egress_port, priority, std::move(packet));
+#else
+    egress_buffers.push_front(egress_port, std::move(packet));
+#endif
 }
 
 // used for ingress cloning, resubmit
@@ -277,14 +292,15 @@ SimpleSwitch::ingress_thread() {
 }
 
 void
-SimpleSwitch::egress_thread(int port) {
+SimpleSwitch::egress_thread(size_t worker_id) {
   Deparser *deparser = this->get_deparser("deparser");
   Pipeline *egress_mau = this->get_pipeline("egress");
   PHV *phv;
 
   while (1) {
     std::unique_ptr<Packet> packet;
-    egress_buffers[port].pop_back(&packet);
+    size_t port;
+    egress_buffers.pop_back(worker_id, &port, &packet);
 
     phv = packet->get_phv();
     packet_id_t packet_id = packet->get_packet_id();
@@ -292,7 +308,7 @@ SimpleSwitch::egress_thread(int port) {
     if (phv->has_header("queueing_metadata")) {
       phv->get_field("queueing_metadata.deq_timestamp").set(get_ts().count());
       phv->get_field("queueing_metadata.deq_qdepth")
-        .set(egress_buffers[port].size());
+        .set(egress_buffers.size(port));
     }
 
     phv->get_field("standard_metadata.egress_port").set(port);
@@ -302,8 +318,6 @@ SimpleSwitch::egress_thread(int port) {
 
     egress_mau->apply(packet.get());
 
-    Field &f_instance_type = phv->get_field("standard_metadata.instance_type");
-
     Field &f_clone_spec = phv->get_field("standard_metadata.clone_spec");
     unsigned int clone_spec = f_clone_spec.get_uint();
 
@@ -312,8 +326,6 @@ SimpleSwitch::egress_thread(int port) {
       BMLOG_DEBUG_PKT(*packet, "Cloning packet at egress");
       int egress_port = get_mirroring_mapping(clone_spec & 0xFFFF);
       if (egress_port >= 0) {
-        int instance_type = f_instance_type.get_int();
-        f_instance_type.set(PKT_INSTANCE_TYPE_EGRESS_CLONE);
         f_clone_spec.set(0);
         p4object_id_t field_list_id = clone_spec >> 16;
         std::unique_ptr<Packet> packet_copy =
@@ -324,8 +336,9 @@ SimpleSwitch::egress_thread(int port) {
           phv_copy->get_field(p.header, p.offset)
             .set(phv->get_field(p.header, p.offset));
         }
+        phv_copy->get_field("standard_metadata.instance_type")
+            .set(PKT_INSTANCE_TYPE_EGRESS_CLONE);
         enqueue(egress_port, std::move(packet_copy));
-        f_instance_type.set(instance_type);
       }
     }
 
@@ -345,7 +358,6 @@ SimpleSwitch::egress_thread(int port) {
         BMLOG_DEBUG_PKT(*packet, "Recirculating packet");
         p4object_id_t field_list_id = f_recirc.get_int();
         f_recirc.set(0);
-        f_instance_type.set(PKT_INSTANCE_TYPE_RECIRC);
         FieldList *field_list = this->get_field_list(field_list_id);
         // TODO(antonin): just like for resubmit, there is no need for a copy
         // here, but it is more convenient for this first prototype
@@ -356,6 +368,8 @@ SimpleSwitch::egress_thread(int port) {
           phv_copy->get_field(p.header, p.offset)
               .set(phv->get_field(p.header, p.offset));
         }
+        phv_copy->get_field("standard_metadata.instance_type")
+            .set(PKT_INSTANCE_TYPE_RECIRC);
         input_buffer.push_front(std::move(packet_copy));
         continue;
       }

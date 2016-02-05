@@ -32,6 +32,17 @@ using std::string;
 
 typedef unsigned char opcode_t;
 
+namespace {
+
+template <typename T,
+          typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
+T hexstr_to_int(const std::string &hexstr) {
+  // TODO(antonin): temporary trick to avoid code duplication
+  return Data(hexstr).get<T>();
+}
+
+}  // namespace
+
 void
 P4Objects::build_expression(const Json::Value &json_expression,
                             Expression *expr) {
@@ -43,11 +54,21 @@ P4Objects::build_expression(const Json::Value &json_expression,
     const Json::Value json_left = json_value["left"];
     const Json::Value json_right = json_value["right"];
 
-    build_expression(json_left, expr);
-    build_expression(json_right, expr);
+    if (op == "?") {
+      const Json::Value json_cond = json_value["cond"];
+      build_expression(json_cond, expr);
 
-    ExprOpcode opcode = ExprOpcodesMap::get_opcode(op);
-    expr->push_back_op(opcode);
+      Expression e1, e2;
+      build_expression(json_left, &e1);
+      build_expression(json_right, &e2);
+      expr->push_back_ternary_op(e1, e2);
+    } else {
+      build_expression(json_left, expr);
+      build_expression(json_right, expr);
+
+      ExprOpcode opcode = ExprOpcodesMap::get_opcode(op);
+      expr->push_back_op(opcode);
+    }
   } else if (type == "header") {
     header_id_t header_id = get_header_id(json_value.asString());
     expr->push_back_load_header(header_id);
@@ -65,6 +86,22 @@ P4Objects::build_expression(const Json::Value &json_expression,
     expr->push_back_load_const(Data(json_value.asString()));
   } else if (type == "local") {  // runtime data for expressions in actions
     expr->push_back_load_local(json_value.asInt());
+  } else if (type == "register") {
+    // TODO(antonin): cheap optimization
+    // this may not be worth doing, and probably does not belong here
+    const string register_array_name = json_value[0].asString();
+    auto &json_index = json_value[1];
+    assert(json_index.size() == 2);
+    if (json_index["type"].asString() == "hexstr") {
+      const unsigned int idx = hexstr_to_int<unsigned int>(
+          json_index["value"].asString());
+      expr->push_back_load_register_ref(
+          get_register_array(register_array_name), idx);
+    } else {
+      build_expression(json_index, expr);
+      expr->push_back_load_register_gen(
+          get_register_array(register_array_name));
+    }
   } else {
     assert(0);
   }
@@ -519,13 +556,33 @@ P4Objects::init_objects(std::istream *is, int device_id, size_t cxt_id,
           header_id_t header_stack_id = get_header_stack_id(header_stack_name);
           action_fn->parameter_push_back_header_stack(header_stack_id);
         } else if (type == "expression") {
-          // TODO(Antonin): shold this make the field case (and other) obsolete
+          // TODO(Antonin): should this make the field case (and other) obsolete
           // maybe if we can optimize this case
           ArithExpression *expr = new ArithExpression();
           build_expression(cfg_parameter["value"], expr);
           expr->build();
           action_fn->parameter_push_back_expression(
             std::unique_ptr<ArithExpression>(expr));
+        } else if (type == "register") {
+          // TODO(antonin): cheap optimization
+          // this may not be worth doing, and probably does not belong here
+          const Json::Value &cfg_register = cfg_parameter["value"];
+          const string register_array_name = cfg_register[0].asString();
+          auto &json_index = cfg_register[1];
+          assert(json_index.size() == 2);
+          if (json_index["type"].asString() == "hexstr") {
+            const unsigned int idx = hexstr_to_int<unsigned int>(
+                json_index["value"].asString());
+            action_fn->parameter_push_back_register_ref(
+                get_register_array(register_array_name), idx);
+          } else {
+            ArithExpression *idx_expr = new ArithExpression();
+            build_expression(json_index, idx_expr);
+            idx_expr->build();
+            action_fn->parameter_push_back_register_gen(
+                get_register_array(register_array_name),
+                std::unique_ptr<ArithExpression>(idx_expr));
+          }
         } else {
           assert(0 && "parameter not supported");
         }
@@ -700,14 +757,25 @@ P4Objects::init_objects(std::istream *is, int device_id, size_t cxt_id,
       const Json::Value &cfg_next_nodes = cfg_table["next_tables"];
       const Json::Value &cfg_actions = cfg_table["actions"];
 
+      auto get_next_node = [this](const Json::Value &cfg_next_node)
+          -> const ControlFlowNode *{
+        if (cfg_next_node.isNull())
+          return nullptr;
+        return get_control_node(cfg_next_node.asString());
+      };
+
       for (const auto &cfg_action : cfg_actions) {
         const string action_name = cfg_action.asString();
+        // note that operator[] creates a null member if action_name does not
+        // exist
         const Json::Value &cfg_next_node = cfg_next_nodes[action_name];
-        const ControlFlowNode *next_node = nullptr;
-        if (!cfg_next_node.isNull()) {
-          next_node = get_control_node(cfg_next_node.asString());
-        }
+        const ControlFlowNode *next_node = get_next_node(cfg_next_node);
         table->set_next_node(get_action(action_name)->get_id(), next_node);
+      }
+
+      for (const auto &spec_next : {"__HIT__", "__MISS__"}) {
+        if (cfg_next_nodes.isMember(spec_next))
+          table->set_next_node_hit(get_next_node(cfg_next_nodes[spec_next]));
       }
     }
 

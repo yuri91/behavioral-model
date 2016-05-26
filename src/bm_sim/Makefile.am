@@ -13,6 +13,8 @@ AM_CFLAGS += $(COVERAGE_FLAGS)
 
 noinst_LTLIBRARIES = libbmsim.la
 
+libbmsim_la_LIBADD = $(srcdir)/../cxa_thread_atexit/libthread_atexit.la
+
 libbmsim_la_SOURCES = \
 actions.cpp \
 ageing.cpp \

@@ -25,6 +25,7 @@
 #define BM_BM_SIM_PORT_MONITOR_H_
 
 #include <memory>
+#include <functional>
 
 namespace bm {
 

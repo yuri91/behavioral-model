@@ -9,4 +9,4 @@ $(top_builddir)/thrift_src/libruntimestubs.la \
 $(top_builddir)/src/BMI/libbmi.la \
 $(top_builddir)/third_party/jsoncpp/libjson.la \
 -lboost_system -lboost_thread $(THRIFT_LIB) -lboost_program_options
-l2_switch_LDFLAGS = -pthread
+l2_switch_LDFLAGS = -pthread -lstdthreads

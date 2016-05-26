@@ -52,7 +52,7 @@ $(top_builddir)/src/BMI/libbmi.la \
 $(top_builddir)/third_party/jsoncpp/libjson.la \
 -lboost_system -lboost_thread $(THRIFT_LIB) -lboost_program_options
 
-libsimpleswitch_la_LDFLAGS = -pthread
+libsimpleswitch_la_LDFLAGS = -pthread -lstdthreads
 
 noinst_LTLIBRARIES = libsimpleswitch.la
 

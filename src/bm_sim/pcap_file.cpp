@@ -303,6 +303,14 @@ void PcapFilesReader::start() {
         firstTime = ptime;
     }
   }
+  // XXX infinite packets for testing
+   while(true) {
+     for (auto &file : files) {
+       std::unique_ptr<PcapPacket> packet = file->current(); 
+       if (handler != nullptr)
+           handler(packet->getPort(), packet->getData(), packet->getLength(), cookie);
+     }
+   }
 
   if (nonEmptyFiles > 0) {
     assert(firstTime != nullptr);

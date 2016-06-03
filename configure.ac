@@ -74,8 +74,8 @@ AS_IF([test "x$enable_elogger" != "xno"], [
 ])
 
 # Checks for programs.
-AC_PROG_CXX
-AC_PROG_CC
+AC_PROG_CXX(clang++)
+AC_PROG_CC(clang)
 LT_INIT
 
 AC_CONFIG_MACRO_DIR([m4])
@@ -135,7 +135,7 @@ AC_SUBST([AM_CPPFLAGS], ["$MY_CPPFLAGS \
                           -isystem\$(top_srcdir)/third_party/jsoncpp/include \
                           -isystem\$(top_srcdir)/third_party/spdlog/include"])
 
-AC_SUBST([AM_CXXFLAGS], ["-Wall -Werror -Wextra"])
+AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Wno-deprecated-register"])
 AC_SUBST([AM_CFLAGS], [""])
 
 # Checks for typedefs, structures, and compiler characteristics.

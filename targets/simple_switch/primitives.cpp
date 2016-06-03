@@ -18,6 +18,8 @@
  *
  */
 
+#include <random>
+
 #include <bm/bm_sim/actions.h>
 
 template <typename... Args>

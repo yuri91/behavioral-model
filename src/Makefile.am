@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
-SUBDIRS = bf_lpm_trie BMI bm_sim bm_runtime bm_apps
+SUBDIRS = bf_lpm_trie BMI bm_sim bm_runtime bm_apps netmap
 
 lib_LTLIBRARIES = libbmp4apps.la
 

@@ -2,6 +2,7 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
 AM_CPPFLAGS += \
 -I$(srcdir)/../BMI \
+-I$(srcdir)/../netmap \
 -I$(srcdir)/../bf_lpm_trie
 
 # I used to have -Weffc++ for this module. I felt that most of it was excessively
@@ -27,6 +28,7 @@ debugger.cpp \
 deparser.cpp \
 dev_mgr.cpp \
 dev_mgr_bmi.cpp \
+dev_mgr_netmap.cpp \
 dev_mgr_packet_in.cpp \
 event_logger.cpp \
 expressions.cpp \

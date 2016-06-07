@@ -66,6 +66,8 @@ class OptionsParser {
   int device_id{};
   // if true read/write packets from files instead of interfaces
   bool use_files{false};
+  // if true use netmap
+  bool use_netmap{false};
   // time to wait (in seconds) before starting packet processing
   int wait_time{0};
   // if true read/write packets from nanomsg socket instead of interfaces

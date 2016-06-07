@@ -1,5 +1,9 @@
 SUBDIRS = . tests
 
+if COND_FREEBSD
+MAYBE_THREAD_ATEXIT = $(top_builddir)/freebsd/libcxa_thread_atexit.la -lstdthreads
+endif
+
 simple_switch_thrift_py_files = \
 gen-py/sswitch_runtime/constants.py \
 gen-py/sswitch_runtime/__init__.py \
@@ -66,7 +70,8 @@ simple_switch_LDADD = \
 $(top_builddir)/src/bm_runtime/libbmruntime.la \
 $(top_builddir)/thrift_src/libruntimestubs.la \
 libsimpleswitch.la \
-libsimpleswitch_thrift.la
+libsimpleswitch_thrift.la \
+$(MAYBE_THREAD_ATEXIT)
 
 simple_switch_SOURCES = main.cpp
 

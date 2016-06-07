@@ -1,4 +1,4 @@
-#!/usr/local/bin/bash
+#!/bin/sh
 
 # Copyright 2013-present Barefoot Networks, Inc.
 #

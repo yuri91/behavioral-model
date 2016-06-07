@@ -98,10 +98,8 @@ void NetmapManager::receive_loop() {
 
     poll(&pfds[0], pfds.size(), POLL_TIMEOUT);
     int i = 0;
-    bool received_packets = false;
     for (auto& p : ports) {
       if (pfds[i].revents & POLLIN) {
-        received_packets = true;
         char* buf = nullptr;
         while (true) {
           int len = p.second->nextpkt(&buf);

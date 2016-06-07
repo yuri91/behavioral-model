@@ -61,6 +61,7 @@ class SimpleSwitch : public Switch {
 
     BMELOG(packet_in, *packet);
 
+    pkt_cnt++;
     input_buffer.push_front(std::move(packet));
     return 0;
   }
@@ -70,16 +71,22 @@ class SimpleSwitch : public Switch {
     t1.detach();
     std::thread t2(&SimpleSwitch::transmit_thread, this);
     t2.detach();
+    std::thread t3(&SimpleSwitch::stats_thread, this);
+    t3.detach();
   }
 
  private:
   void pipeline_thread();
   void transmit_thread();
 
+  void stats_thread();
+
  private:
   Queue<std::unique_ptr<Packet> > input_buffer;
   Queue<std::unique_ptr<Packet> > output_buffer;
   bool swap_happened{false};
+
+  uint64_t pkt_cnt{0};
 };
 
 void SimpleSwitch::transmit_thread() {
@@ -134,6 +141,20 @@ void SimpleSwitch::pipeline_thread() {
       deparser->deparse(packet.get());
       output_buffer.push_front(std::move(packet));
     }
+  }
+
+}
+
+void SimpleSwitch::stats_thread() {
+  uint64_t old_pkt_cnt = 0;
+  while(true) {
+    uint64_t delta_pkt = pkt_cnt - old_pkt_cnt;
+    std::cout<<1000000000.0/delta_pkt<<" ns/pkt "
+      <<delta_pkt<<" pkt/s"
+      <<std::endl;
+    old_pkt_cnt = pkt_cnt;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
   }
 }
 

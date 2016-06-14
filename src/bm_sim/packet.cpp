@@ -213,6 +213,41 @@ Packet::make_new(size_t cxt, int ingress_port, packet_id_t id,
                 std::move(buffer), phv_source);
 }
 
+
+// custom allocator
+static std::list<void*> global_freelist;
+static std::mutex global_mutex;
+static thread_local std::list<void*> local_freelist;
+static const size_t max_local_size{1024};
+
+
+static void* Packet::operator new(std::size_t sz) {
+  (void)sz;
+
+  if (local_freelist.size() == 0) {
+    std::unique_lock<std::mutex> lock(global_mutex);
+    if (global_freelist.size() > 0) {
+      local_freelist.merge(global_freelist);
+    }
+    lock.unlock();
+    if (local_freelist.size() == 0) {
+      local_freelist.push_back(malloc(sizeof(Packet)));
+    }
+  }
+  void* p = local_freelist.front();
+  local_freelist.pop_front();
+  return p;
+}
+
+static void Packet::operator delete(void* p) {
+  local_freelist.push_back(p);
+  if (local_freelist.size() > max_local_size) {
+    std::unique_lock<std::mutex> lock(global_mutex);
+    global_freelist.merge(local_freelist);
+    lock.unlock();
+  }
+}
+
 CopyIdGenerator *Packet::copy_id_gen = new CopyIdGenerator();
 
 }  // namespace bm

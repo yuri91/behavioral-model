@@ -1,3 +1,4 @@
+
 /* Copyright 2013-present Barefoot Networks, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,13 +24,19 @@
 #include <vector>
 #include <mutex>
 #include <iostream>
+#include <atomic>
+#include <map>
 
 namespace bm {
 
 class PHVSourceContextPools : public PHVSourceIface {
  public:
   explicit PHVSourceContextPools(size_t size)
-      : phv_pools(size) { }
+      : phv_pools(size) {
+      for (auto& phv_pool : phv_pools) {
+        tls.emplace(&phv_pool, 0);
+      }
+  }
 
  private:
   class PHVPool {
@@ -38,25 +45,38 @@ class PHVSourceContextPools : public PHVSourceIface {
       std::unique_lock<std::mutex> lock(mutex);
       assert(count == 0);
       phv_factory = factory;
-      phvs.clear();
+      global_phvs.clear(); // XXX should do explicit delete
+      std::vector<PHV*>& local_phvs = tls[this];
+      local_phvs.clear();
     }
 
     std::unique_ptr<PHV> get() {
-      std::unique_lock<std::mutex> lock(mutex);
       count++;
-      if (phvs.size() == 0) {
+      std::vector<PHV*>& local_phvs = tls[this];
+      if (local_phvs.size() == 0) {
+        std::unique_lock<std::mutex> lock(mutex);
+        if (global_phvs.size() == 0) {
+          lock.unlock();
+          return phv_factory->create();
+        }
+        local_phvs.insert(local_phvs.end(),global_phvs.begin(), global_phvs.end());
+        global_phvs.clear();
         lock.unlock();
-        return phv_factory->create();
       }
-      std::unique_ptr<PHV> phv = std::move(phvs.back());
-      phvs.pop_back();
+      std::unique_ptr<PHV> phv = std::unique_ptr<PHV>(local_phvs.back());
+      local_phvs.pop_back();
       return phv;
     }
 
     void release(std::unique_ptr<PHV> phv) {
-      std::unique_lock<std::mutex> lock(mutex);
       count--;
-      phvs.push_back(std::move(phv));
+      std::vector<PHV*>& local_phvs = tls[this];
+      local_phvs.push_back(phv.release());
+      if (local_phvs.size() >= max_local_size) {
+        std::unique_lock<std::mutex> lock(mutex);
+        global_phvs.insert(global_phvs.end(), local_phvs.begin(), local_phvs.end());
+        local_phvs.clear();
+      }
     }
 
     size_t phvs_in_use() {
@@ -66,9 +86,11 @@ class PHVSourceContextPools : public PHVSourceIface {
 
    private:
     mutable std::mutex mutex{};
-    std::vector<std::unique_ptr<PHV> > phvs{};
+    std::vector<PHV*> global_phvs{};
     const PHVFactory *phv_factory{nullptr};
-    size_t count{0};
+    std::atomic<size_t> count{0};
+    size_t max_local_size{1024};
+
   };
 
   std::unique_ptr<PHV> get_(size_t cxt) override {
@@ -88,7 +110,16 @@ class PHVSourceContextPools : public PHVSourceIface {
   }
 
   std::vector<PHVPool> phv_pools;
+  /* This map is used to store the thread_local vector of available phvs
+   * Because thread_local variables can only be static, we need the map to link
+   * every PHVPool instance to a local phv vector.
+   * The goal is to limit the use of locks in order to achieve better
+   * performance.
+   */
+  static thread_local std::map<PHVPool*, std::vector<PHV*>> tls;
 };
+
+thread_local std::map<PHVSourceContextPools::PHVPool*, std::vector<PHV*>> PHVSourceContextPools::tls;
 
 std::unique_ptr<PHVSourceIface>
 PHVSourceIface::make_phv_source(size_t size) {

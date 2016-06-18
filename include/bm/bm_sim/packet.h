@@ -312,8 +312,6 @@ class Packet final {
                          // NOLINTNEXTLINE(whitespace/operators)
                          PacketBuffer &&buffer, PHVSourceIface *phv_source);
 
-  static void* operator new(std::size_t sz);
-  static void operator delete(void* p);
  private:
   Packet(size_t cxt, int ingress_port, packet_id_t id, copy_id_t copy_id,
          int ingress_length, PacketBuffer &&buffer, PHVSourceIface *phv_source);

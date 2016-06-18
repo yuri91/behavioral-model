@@ -235,7 +235,9 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
                                          // cpplint false positive
                                          // NOLINTNEXTLINE(whitespace/operators)
                                          PacketBuffer &&buffer) {
-    boost::shared_lock<boost::shared_mutex> lock(ongoing_swap_mutex);
+    if (enable_swap && swap_requested()) {
+      boost::shared_lock<boost::shared_mutex> lock(ongoing_swap_mutex);
+    }
     return std::unique_ptr<Packet>(new Packet(
         cxt_id, ingress_port, id, 0u, ingress_length, std::move(buffer),
         phv_source.get()));
@@ -246,7 +248,9 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
                     // cpplint false positive
                     // NOLINTNEXTLINE(whitespace/operators)
                     int ingress_length, PacketBuffer &&buffer) {
-    boost::shared_lock<boost::shared_mutex> lock(ongoing_swap_mutex);
+    if (enable_swap && swap_requested()) {
+      boost::shared_lock<boost::shared_mutex> lock(ongoing_swap_mutex);
+    }
     return Packet(cxt_id, ingress_port, id, 0u, ingress_length,
                   std::move(buffer), phv_source.get());
   }

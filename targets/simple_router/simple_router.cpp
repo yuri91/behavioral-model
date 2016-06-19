@@ -18,7 +18,7 @@
  *
  */
 
-#include <bm/bm_sim/queue.h>
+#include <bm/bm_sim/spsc_queue.h>
 #include <bm/bm_sim/packet.h>
 #include <bm/bm_sim/parser.h>
 #include <bm/bm_sim/tables.h>
@@ -36,58 +36,86 @@
 #include <string>
 #include <chrono>
 
+#include <iostream>
+#include <iomanip>
+
+
+template<typename T>
+using Queue = bm::SPSCQueue<T>;
+
 using bm::Switch;
-using bm::Queue;
 using bm::Packet;
 using bm::PHV;
 using bm::Parser;
 using bm::Deparser;
 using bm::Pipeline;
 
+
 class SimpleSwitch : public Switch {
  public:
   SimpleSwitch()
-    : Switch(true),  // enable_switch = true
-      input_buffer(1024), output_buffer(128) { }
+    : Switch(true),  // enable_swap = false
+      input_buffer(1024), process_buffer(1024), output_buffer(1024) { }
 
   int receive(int port_num, const char *buffer, int len) {
     static int pkt_id = 0;
 
-    if (this->do_swap() == 0)  // a swap took place
-      swap_happened = true;
+    //if (this->do_swap() == 0)  // a swap took place
+    //  swap_happened = true;
 
     auto packet = new_packet_ptr(port_num, pkt_id++, len,
                                  bm::PacketBuffer(2048, buffer, len));
 
     BMELOG(packet_in, *packet);
 
-    pkt_cnt++;
-    input_buffer.push_front(std::move(packet));
+    packet_count++;
+    input_buffer.push_front(std::move(packet), (packet_count%256==0));
     return 0;
   }
 
   void start_and_return() {
-    std::thread t1(&SimpleSwitch::pipeline_thread, this);
+    std::thread t1(&SimpleSwitch::ingress_thread, this);
     t1.detach();
-    std::thread t2(&SimpleSwitch::transmit_thread, this);
+    std::thread t2(&SimpleSwitch::egress_thread, this);
     t2.detach();
-    std::thread t3(&SimpleSwitch::stats_thread, this);
+    std::thread t3(&SimpleSwitch::transmit_thread, this);
     t3.detach();
+    std::thread t4(&SimpleSwitch::stats_thread, this);
+    t4.detach();
   }
 
  private:
-  void pipeline_thread();
+  void ingress_thread();
+  void egress_thread();
   void transmit_thread();
 
   void stats_thread();
 
  private:
   Queue<std::unique_ptr<Packet> > input_buffer;
+  Queue<std::unique_ptr<Packet> > process_buffer;
   Queue<std::unique_ptr<Packet> > output_buffer;
   bool swap_happened{false};
 
-  uint64_t pkt_cnt{0};
+  // XXX variables for stat printing
+  uint64_t packet_count{0};  // one entry per port
+
 };
+
+void SimpleSwitch::stats_thread() {
+  uint64_t old_packet_count=0;
+
+  int period = 200;
+  while(true) {
+    std::cout<<period*1000000.0/(packet_count-old_packet_count)<<" ns/pkt "
+             <<" "<<1000.0*(packet_count-old_packet_count)/period<<" pkt/s"
+             <<std::endl;
+
+    old_packet_count=packet_count;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(period));
+  }
+}
 
 void SimpleSwitch::transmit_thread() {
   while (1) {
@@ -101,34 +129,38 @@ void SimpleSwitch::transmit_thread() {
   }
 }
 
-void SimpleSwitch::pipeline_thread() {
+void SimpleSwitch::ingress_thread() {
   Pipeline *ingress_mau = this->get_pipeline("ingress");
-  Pipeline *egress_mau = this->get_pipeline("egress");
   Parser *parser = this->get_parser("parser");
-  Deparser *deparser = this->get_deparser("deparser");
-  PHV *phv;
 
   while (1) {
     std::unique_ptr<Packet> packet;
     input_buffer.pop_back(&packet);
-    phv = packet->get_phv();
-
+    //continue;
     int ingress_port = packet->get_ingress_port();
     (void) ingress_port;
     BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
                     ingress_port);
 
-    // update pointers if needed
-    if (swap_happened) {  // a swap took place
-      ingress_mau = this->get_pipeline("ingress");
-      egress_mau = this->get_pipeline("egress");
-      parser = this->get_parser("parser");
-      deparser = this->get_deparser("deparser");
-      swap_happened = false;
-    }
 
     parser->parse(packet.get());
     ingress_mau->apply(packet.get());
+
+    process_buffer.push_front(std::move(packet));
+  }
+}
+
+void SimpleSwitch::egress_thread() {
+  Pipeline *egress_mau = this->get_pipeline("egress");
+  Deparser *deparser = this->get_deparser("deparser");
+  PHV *phv;
+
+  while (1) {
+    std::unique_ptr<Packet> packet;
+    process_buffer.pop_back(&packet);
+    //continue;
+    phv = packet->get_phv();
+
 
     int egress_port = phv->get_field("standard_metadata.egress_port").get_int();
     BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
@@ -142,26 +174,11 @@ void SimpleSwitch::pipeline_thread() {
       output_buffer.push_front(std::move(packet));
     }
   }
-
-}
-
-void SimpleSwitch::stats_thread() {
-  uint64_t old_pkt_cnt = 0;
-  while(true) {
-    uint64_t delta_pkt = pkt_cnt - old_pkt_cnt;
-    std::cout<<1000000000.0/delta_pkt<<" ns/pkt "
-      <<delta_pkt<<" pkt/s"
-      <<std::endl;
-    old_pkt_cnt = pkt_cnt;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-  }
 }
 
 /* Switch instance */
 
 static SimpleSwitch *simple_switch;
-
 
 int
 main(int argc, char* argv[]) {

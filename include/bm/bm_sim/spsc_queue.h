@@ -31,6 +31,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <thread>
+#include <queue>
 
 namespace {
 class Semaphore {
@@ -53,16 +54,70 @@ class Semaphore {
 };
 }
 
+
 namespace bm{
 
-template <class T>
+template <typename Type, typename Compare = std::less<Type>>
+class priority_queue
+{
+private:
+    std::vector<Type> _elements;
+    Compare _compare;
+public:
+    explicit priority_queue(const Compare& compare = Compare())
+        : _compare{compare}
+    { }
+    void push(Type element)
+    {
+        _elements.push_back(std::move(element));
+        std::push_heap(_elements.begin(), _elements.end(), _compare);
+    }
+    Type pop()
+    {
+        std::pop_heap(_elements.begin(), _elements.end(), _compare);
+        Type result = std::move(_elements.back());
+        _elements.pop_back();
+        return std::move(result);
+    }
+    size_t size() {
+      return _elements.size();
+    }
+};
+template <typename Type, typename Compare = std::less<Type>>
+class queue
+{
+private:
+    std::vector<Type> _elements;
+public:
+    explicit queue()
+    { }
+    void push(Type&& element)
+    {
+        _elements.push_back(std::move(element));
+    }
+    void push(const Type& element)
+    {
+        _elements.push_back(element);
+    }
+    Type pop()
+    {
+        Type result = std::move(_elements.back());
+        _elements.pop_back();
+        return std::move(result);
+    }
+    size_t size() {
+      return _elements.size();
+    }
+};
+
+template <class T, class QueueType=queue<T>>
 class SPSCQueue {
  public:
   using index_t = uint32_t;
   using atomic_index_t = std::atomic<index_t>;
 
   SPSCQueue(size_t capacity = 1024)
-    : capacity(capacity), store(new T[capacity]) {
+    : capacity(capacity), ring(new T[capacity]) {
     size_t max_size = 1<<(sizeof(index_t)*8-1);
     if (capacity<1 || capacity>max_size || ((capacity-1) & capacity) !=0 ){
       std::cout<<"queue size must be a power of 2 and <= "<<max_size<<std::endl;
@@ -81,10 +136,15 @@ class SPSCQueue {
   //! Pops an element from the back of the queue: moves the element to `*pItem`.
   // (consumer)
   bool pop_back(T* pItem) {
-    // sure to have available item
-    cons_wait_data(1);
-    *pItem = std::move(store[normalize_index(cons_ci)]);
-    cons_advance(1);
+    if (out_queue.size() == 0 || cons_has_data(1)) {
+      index_t num = cons_wait_data(1);
+      for (index_t i = 0; i < num; i++) {
+        out_queue.push(std::move(ring[normalize_index(cons_ci+i)]));
+      }
+      cons_advance(num);
+    }
+    *pItem = std::move(out_queue.pop());
+    //out_queue.pop();
     return true;
   }
 
@@ -107,7 +167,7 @@ class SPSCQueue {
   bool push_front_forward(U &&item, bool force) {
     prod_wait_space(1);
     // sure to have space
-    store[normalize_index(prod_pi)] = std::forward<U>(item);
+    ring[normalize_index(prod_pi)] = std::forward<U>(item);
     prod_advance(1, force);
 
     return true;
@@ -212,7 +272,7 @@ class SPSCQueue {
 
 private:
   size_t capacity;
-  std::unique_ptr<T[]> store;
+  std::unique_ptr<T[]> ring;
 
   alignas(64)
   atomic_index_t __prod_index{0}; // index of the next element to produce
@@ -231,6 +291,7 @@ private:
   index_t cons_pi{0}; // copy of producer index (used by consumer)
   uint64_t notification_count_cons{0};  // for stats
   uint64_t wait_count_cons{0}; //XXX stats
+  QueueType out_queue;
 
   alignas(64)
   Semaphore prod_sem;

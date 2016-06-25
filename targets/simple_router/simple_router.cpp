@@ -70,11 +70,14 @@ class SimpleSwitch : public Switch {
     //  swap_happened = true;
 
     auto packet = new_packet_ptr(port_num, pkt_id++, len,
-                                 bm::PacketBuffer(2048, buffer, len));
+                                 bm::PacketBuffer(len+512, buffer, len));
 
     BMELOG(packet_in, *packet);
 
     packet_count++;
+    Parser *parser = this->get_parser("parser");
+    parser->parse(packet.get());
+
     input_buffer.push_front(std::move(packet),  (packet_count%1024==0));
     return 0;
   }
@@ -124,9 +127,11 @@ void SimpleSwitch::stats_thread() {
 }
 
 void SimpleSwitch::transmit_thread() {
+  Deparser *deparser = this->get_deparser("deparser");
   while (1) {
     std::unique_ptr<Packet> packet;
     output_buffer.pop_back(&packet);
+    deparser->deparse(packet.get());
     BMELOG(packet_out, *packet);
     BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                     packet->get_data_size(), packet->get_egress_port());
@@ -137,8 +142,6 @@ void SimpleSwitch::transmit_thread() {
 
 void SimpleSwitch::ingress_thread() {
   Pipeline *ingress_mau = this->get_pipeline("ingress");
-  Parser *parser = this->get_parser("parser");
-
   while (1) {
     std::unique_ptr<Packet> packet;
     input_buffer.pop_back(&packet);
@@ -149,7 +152,6 @@ void SimpleSwitch::ingress_thread() {
                     ingress_port);
 
 
-    parser->parse(packet.get());
     ingress_mau->apply(packet.get());
 
     process_buffer.push_front(std::move(packet));
@@ -158,7 +160,6 @@ void SimpleSwitch::ingress_thread() {
 
 void SimpleSwitch::egress_thread() {
   Pipeline *egress_mau = this->get_pipeline("egress");
-  Deparser *deparser = this->get_deparser("deparser");
   PHV *phv;
 
   while (1) {
@@ -176,7 +177,6 @@ void SimpleSwitch::egress_thread() {
     } else {
       packet->set_egress_port(egress_port);
       egress_mau->apply(packet.get());
-      deparser->deparse(packet.get());
       output_buffer.push_front(std::move(packet));
     }
   }

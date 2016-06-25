@@ -40,7 +40,14 @@
 #include <iomanip>
 
 
+struct cmp {
+  bool operator()(const std::unique_ptr<bm::Packet> &lhs, const std::unique_ptr<bm::Packet> &rhs) const {
+    return lhs->get_packet_id() < rhs->get_packet_id();
+  }
+};
+
 template<typename T>
+//using Queue = bm::SPSCQueue<T,std::priority_queue<T,std::vector<T>,cmp>>;
 using Queue = bm::SPSCQueue<T>;
 
 using bm::Switch;
@@ -49,7 +56,6 @@ using bm::PHV;
 using bm::Parser;
 using bm::Deparser;
 using bm::Pipeline;
-
 
 class SimpleSwitch : public Switch {
  public:
@@ -69,7 +75,7 @@ class SimpleSwitch : public Switch {
     BMELOG(packet_in, *packet);
 
     packet_count++;
-    input_buffer.push_front(std::move(packet), (packet_count%256==0));
+    input_buffer.push_front(std::move(packet),  (packet_count%1024==0));
     return 0;
   }
 
@@ -92,9 +98,9 @@ class SimpleSwitch : public Switch {
   void stats_thread();
 
  private:
-  Queue<std::unique_ptr<Packet> > input_buffer;
-  Queue<std::unique_ptr<Packet> > process_buffer;
-  Queue<std::unique_ptr<Packet> > output_buffer;
+  Queue<std::unique_ptr<Packet>> input_buffer;
+  Queue<std::unique_ptr<Packet>> process_buffer;
+  Queue<std::unique_ptr<Packet>> output_buffer;
   bool swap_happened{false};
 
   // XXX variables for stat printing
@@ -162,7 +168,7 @@ void SimpleSwitch::egress_thread() {
     phv = packet->get_phv();
 
 
-    int egress_port = phv->get_field("standard_metadata.egress_port").get_int();
+    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
     BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
     if (egress_port == 511) {

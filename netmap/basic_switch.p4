@@ -53,10 +53,10 @@ table forward {
 
 
 control ingress {
+    apply(forward);
 }
 
 control egress {
-    apply(forward);
 }
 
 

@@ -176,13 +176,6 @@
         {
             "name": "ingress",
             "id": 0,
-            "init_table": null,
-            "tables": [],
-            "conditionals": []
-        },
-        {
-            "name": "egress",
-            "id": 1,
             "init_table": "forward",
             "tables": [
                 {
@@ -216,6 +209,13 @@
                     "base_default_next": null
                 }
             ],
+            "conditionals": []
+        },
+        {
+            "name": "egress",
+            "id": 1,
+            "init_table": null,
+            "tables": [],
             "conditionals": []
         }
     ],

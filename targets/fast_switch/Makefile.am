@@ -1,6 +1,12 @@
-noinst_PROGRAMS = simple_router
-simple_router_SOURCES = simple_router.cpp primitives.cpp
-simple_router_LDADD = \
+
+
+if COND_FREEBSD
+MAYBE_THREAD_ATEXIT = $(top_builddir)/freebsd/libcxa_thread_atexit.la -lstdthreads
+endif
+
+noinst_PROGRAMS = fast_switch
+fast_switch_SOURCES = fast_switch.cpp primitives.cpp
+fast_switch_LDADD = \
 $(top_builddir)/src/bm_runtime/libbmruntime.la \
 $(top_builddir)/src/bm_sim/libbmsim.la \
 $(top_builddir)/src/bf_lpm_trie/libbflpmtrie.la \
@@ -8,5 +14,6 @@ $(top_builddir)/thrift_src/libruntimestubs.la \
 $(top_builddir)/src/BMI/libbmi.la \
 $(top_builddir)/src/netmap/libnetmap.la \
 $(top_builddir)/third_party/jsoncpp/libjson.la \
+$(MAYBE_THREAD_ATEXIT) \
 -lboost_system -lboost_thread $(THRIFT_LIB) -lboost_program_options
-simple_router_LDFLAGS = -pthread
+fast_switch_LDFLAGS = -pthread

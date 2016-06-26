@@ -18,7 +18,7 @@
  *
  */
 
-#include <bm/bm_sim/queue.h>
+#include <bm/bm_sim/spsc_queue.h>
 #include <bm/bm_sim/packet.h>
 #include <bm/bm_sim/parser.h>
 #include <bm/bm_sim/tables.h>
@@ -36,57 +36,103 @@
 #include <string>
 #include <chrono>
 
+#include <iostream>
+#include <iomanip>
+
+
+struct cmp {
+  bool operator()(const std::unique_ptr<bm::Packet> &lhs, const std::unique_ptr<bm::Packet> &rhs) const {
+    return lhs->get_packet_id() < rhs->get_packet_id();
+  }
+};
+
+template<typename T>
+//using Queue = bm::SPSCQueue<T,std::priority_queue<T,std::vector<T>,cmp>>;
+using Queue = bm::SPSCQueue<T>;
+
 using bm::Switch;
-using bm::Queue;
 using bm::Packet;
 using bm::PHV;
 using bm::Parser;
 using bm::Deparser;
 using bm::Pipeline;
 
-class SimpleSwitch : public Switch {
+class FastSwitch : public Switch {
  public:
-  SimpleSwitch()
-    : Switch(true),  // enable_switch = true
-      input_buffer(1024), output_buffer(128) { }
+  FastSwitch()
+    : Switch(true),  // enable_swap = false
+      input_buffer(1024), process_buffer(1024), output_buffer(1024) { }
 
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
-    (void) flags;
     static int pkt_id = 0;
 
-    if (this->do_swap() == 0)  // a swap took place
-      swap_happened = true;
+    (void)flags;
+    //if (this->do_swap() == 0)  // a swap took place
+    //  swap_happened = true;
 
     auto packet = new_packet_ptr(port_num, pkt_id++, len,
-                                 bm::PacketBuffer(2048, buffer, len));
+                                 bm::PacketBuffer(len+512, buffer, len));
 
     BMELOG(packet_in, *packet);
 
-    input_buffer.push_front(std::move(packet));
+    packet_count++;
+    Parser *parser = this->get_parser("parser");
+    parser->parse(packet.get());
+
+    input_buffer.push_front(std::move(packet), flags==0);
     return 0;
   }
 
   void start_and_return() {
-    std::thread t1(&SimpleSwitch::pipeline_thread, this);
+    std::thread t1(&FastSwitch::ingress_thread, this);
     t1.detach();
-    std::thread t2(&SimpleSwitch::transmit_thread, this);
+    std::thread t2(&FastSwitch::egress_thread, this);
     t2.detach();
+    std::thread t3(&FastSwitch::transmit_thread, this);
+    t3.detach();
+    std::thread t4(&FastSwitch::stats_thread, this);
+    t4.detach();
   }
 
  private:
-  void pipeline_thread();
+  void ingress_thread();
+  void egress_thread();
   void transmit_thread();
 
+  void stats_thread();
+
  private:
-  Queue<std::unique_ptr<Packet> > input_buffer;
-  Queue<std::unique_ptr<Packet> > output_buffer;
+  Queue<std::unique_ptr<Packet>> input_buffer;
+  Queue<std::unique_ptr<Packet>> process_buffer;
+  Queue<std::unique_ptr<Packet>> output_buffer;
   bool swap_happened{false};
+
+  // XXX variables for stat printing
+  uint64_t packet_count{0};  // one entry per port
+
 };
 
-void SimpleSwitch::transmit_thread() {
+void FastSwitch::stats_thread() {
+  uint64_t old_packet_count=0;
+
+  int period = 200;
+  while(true) {
+    std::cout<<period*1000000.0/(packet_count-old_packet_count)<<" ns/pkt "
+             <<" "<<1000.0*(packet_count-old_packet_count)/period<<" pkt/s"
+             <<std::endl;
+
+    old_packet_count=packet_count;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(period));
+  }
+}
+
+void FastSwitch::transmit_thread() {
+  Deparser *deparser = this->get_deparser("deparser");
   while (1) {
     std::unique_ptr<Packet> packet;
     output_buffer.pop_back(&packet);
+    deparser->deparse(packet.get());
     BMELOG(packet_out, *packet);
     BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                     packet->get_data_size(), packet->get_egress_port());
@@ -95,36 +141,36 @@ void SimpleSwitch::transmit_thread() {
   }
 }
 
-void SimpleSwitch::pipeline_thread() {
+void FastSwitch::ingress_thread() {
   Pipeline *ingress_mau = this->get_pipeline("ingress");
-  Pipeline *egress_mau = this->get_pipeline("egress");
-  Parser *parser = this->get_parser("parser");
-  Deparser *deparser = this->get_deparser("deparser");
-  PHV *phv;
-
   while (1) {
     std::unique_ptr<Packet> packet;
     input_buffer.pop_back(&packet);
-    phv = packet->get_phv();
-
+    //continue;
     int ingress_port = packet->get_ingress_port();
     (void) ingress_port;
     BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
                     ingress_port);
 
-    // update pointers if needed
-    if (swap_happened) {  // a swap took place
-      ingress_mau = this->get_pipeline("ingress");
-      egress_mau = this->get_pipeline("egress");
-      parser = this->get_parser("parser");
-      deparser = this->get_deparser("deparser");
-      swap_happened = false;
-    }
 
-    parser->parse(packet.get());
     ingress_mau->apply(packet.get());
 
-    int egress_port = phv->get_field("standard_metadata.egress_port").get_int();
+    process_buffer.push_front(std::move(packet));
+  }
+}
+
+void FastSwitch::egress_thread() {
+  Pipeline *egress_mau = this->get_pipeline("egress");
+  PHV *phv;
+
+  while (1) {
+    std::unique_ptr<Packet> packet;
+    process_buffer.pop_back(&packet);
+    //continue;
+    phv = packet->get_phv();
+
+
+    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
     BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
     if (egress_port == 511) {
@@ -132,7 +178,6 @@ void SimpleSwitch::pipeline_thread() {
     } else {
       packet->set_egress_port(egress_port);
       egress_mau->apply(packet.get());
-      deparser->deparse(packet.get());
       output_buffer.push_front(std::move(packet));
     }
   }
@@ -140,20 +185,19 @@ void SimpleSwitch::pipeline_thread() {
 
 /* Switch instance */
 
-static SimpleSwitch *simple_switch;
-
+static FastSwitch *fast_switch;
 
 int
 main(int argc, char* argv[]) {
-  simple_switch = new SimpleSwitch();
-  int status = simple_switch->init_from_command_line_options(argc, argv);
+  fast_switch = new FastSwitch();
+  int status = fast_switch->init_from_command_line_options(argc, argv);
   if (status != 0) std::exit(status);
 
   // should this be done by the call to init_from_command_line_options
-  int thrift_port = simple_switch->get_runtime_port();
-  bm_runtime::start_server(simple_switch, thrift_port);
+  int thrift_port = fast_switch->get_runtime_port();
+  bm_runtime::start_server(fast_switch, thrift_port);
 
-  simple_switch->start_and_return();
+  fast_switch->start_and_return();
 
   while (true) std::this_thread::sleep_for(std::chrono::seconds(100));
 

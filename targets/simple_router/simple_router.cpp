@@ -124,7 +124,7 @@ void SimpleSwitch::pipeline_thread() {
     parser->parse(packet.get());
     ingress_mau->apply(packet.get());
 
-    int egress_port = phv->get_field("standard_metadata.egress_port").get_int();
+    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
     BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
     if (egress_port == 511) {

@@ -60,23 +60,19 @@ void NetmapManager::flush_out() {
 }
 
 bool NetmapManager::add_interface(std::string ifname, int port) {
-  if (ports.find(port) != ports.end())
-    return false;
-
   std::lock_guard<std::mutex> lock(ports_mutex);
+  if (ports.find(port) != ports.end()) {
+    return false;
+  }
   ports.emplace(port, std::unique_ptr<NetmapInterface>(
                 new NetmapInterface(ifname)));
-
   ports_changed = true;
-
   return true;
 }
 
 bool NetmapManager::remove_interface(int port) {
   std::lock_guard<std::mutex> lock(ports_mutex);
-
   ports_changed = true;
-
   return ports.erase(port) == 1;
 }
 
@@ -85,15 +81,13 @@ void NetmapManager::receive_loop() {
 
   while (!stopping) {
     // check if ports have been added/removed and update pfds
-    {
+    if (ports_changed) {
       std::lock_guard<std::mutex> lock(ports_mutex);
-      if (ports_changed) {
-        pfds.clear();
-        for (auto& p : ports) {
-          pfds.emplace_back(pollfd{p.second->fd(), POLLIN, 0});
-        }
-        ports_changed = false;
+      pfds.clear();
+      for (auto& p : ports) {
+        pfds.emplace_back(pollfd{p.second->fd(), POLLIN, 0});
       }
+      ports_changed = false;
     }
 
     poll(&pfds[0], pfds.size(), POLL_TIMEOUT);
@@ -101,15 +95,23 @@ void NetmapManager::receive_loop() {
     for (auto& p : ports) {
       if (pfds[i].revents & POLLIN) {
         char* buf = nullptr;
+        int len = p.second->nextpkt(&buf);
+        char* buf_next = nullptr;
+        int len_next = 0;
+        uint64_t flags = 0;
         while (true) {
-          int len = p.second->nextpkt(&buf);
-          // char* bufcopy = new char[len];
-          // memcpy(bufcopy,buf,len);
           if (len <= 0) {
             break;
-          } else if (packet_handler) {
-            packet_handler(p.first, buf, len, packet_cookie);
           }
+          len_next = p.second->nextpkt(&buf_next);
+          // char* bufcopy = new char[len];
+          // memcpy(bufcopy,buf,len);
+          flags = (len_next > 0);
+          if (packet_handler) {
+            packet_handler(p.first, buf, len, flags, packet_cookie);
+          }
+          len = len_next;
+          buf = buf_next;
         }
       }
       i++;

@@ -113,7 +113,8 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
 
   //! Your implementation will be called every time a new packet is received by
   //! the device.
-  virtual int receive(int port_num, const char *buffer, int len) = 0;
+  virtual int receive(int port_num, const char *buffer, int len,
+                      uint64_t flags) = 0;
 
   //! Do all your initialization in this function (e.g. start processing
   //! threads) and call this function when you are ready to process packets.

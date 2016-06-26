@@ -253,7 +253,7 @@ PacketInDevMgrImp::handle_msg(void *msg) {
         char *data = static_cast<char *>(msg) + sizeof(packet_hdr);
         std::cout << "packet in received on port " << packet_hdr.port
                   << std::endl;
-        pkt_handler(packet_hdr.port, data, packet_hdr.more, pkt_cookie);
+        pkt_handler(packet_hdr.port, data, packet_hdr.more, 0, pkt_cookie);
       }
       break;
     case MSG_TYPE_PACKET_OUT:

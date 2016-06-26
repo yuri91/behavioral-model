@@ -13,7 +13,8 @@
 
 #include "./netmap_interface.h"
 
-typedef std::function<void(int, const char*, int, void*)> packet_handler_t;
+typedef std::function<void(int, const char*, int, uint64_t, void*)>
+        packet_handler_t;
 
 class NetmapManager {
  public:
@@ -40,7 +41,7 @@ class NetmapManager {
   std::map<int, std::unique_ptr<NetmapInterface>> ports{};
   std::atomic_bool started{false};
   std::atomic_bool stopping{false};
-  bool ports_changed {false};
+  std::atomic_bool ports_changed {false};
   std::mutex ports_mutex{};
   std::mutex handler_mutex{};
   std::thread receive_thread{};

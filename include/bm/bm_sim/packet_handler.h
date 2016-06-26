@@ -20,8 +20,8 @@ namespace bm {
 
 class PacketDispatcherIface {
  public:
-  typedef std::function<void(int port_num, const char *buffer,
-                             int len, void* cookie)> PacketHandler;
+  typedef std::function<void(int port_num, const char *buffer, int len,
+                             uint64_t flags,void* cookie)> PacketHandler;
   enum class ReturnCode {
     SUCCESS,
     UNSUPPORTED,

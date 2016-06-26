@@ -37,10 +37,11 @@
 namespace bm {
 
 static void
-packet_handler(int port_num, const char *buffer, int len, void *cookie) {
+packet_handler(int port_num, const char *buffer, int len, uint64_t flags,
+               void *cookie) {
   // static_cast<Switch *> if okay here because cookie was obtained by casting a
   // Switch * to void *
-  static_cast<Switch *>(cookie)->receive(port_num, buffer, len);
+  static_cast<Switch *>(cookie)->receive(port_num, buffer, len, flags);
 }
 
 // TODO(antonin): maybe a factory method would be more appropriate for Switch

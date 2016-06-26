@@ -101,7 +101,7 @@ static void *run_select(void *data) {
         if(pkt_len < 0) continue;
         /* printf("Received pkt of len %d on port %d\n", pkt_len, i); */
         if(port_mgr->packet_handler) {
-          port_mgr->packet_handler(i, pkt_data, pkt_len, port_mgr->cookie);
+          port_mgr->packet_handler(i, pkt_data, pkt_len, 0, port_mgr->cookie);
         }
       }
     }

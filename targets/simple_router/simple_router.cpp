@@ -63,9 +63,10 @@ class SimpleSwitch : public Switch {
     : Switch(true),  // enable_swap = false
       input_buffer(1024), process_buffer(1024), output_buffer(1024) { }
 
-  int receive(int port_num, const char *buffer, int len) {
+  int receive(int port_num, const char *buffer, int len, uint64_t flags) {
     static int pkt_id = 0;
 
+    (void)flags;
     //if (this->do_swap() == 0)  // a swap took place
     //  swap_happened = true;
 
@@ -78,7 +79,7 @@ class SimpleSwitch : public Switch {
     Parser *parser = this->get_parser("parser");
     parser->parse(packet.get());
 
-    input_buffer.push_front(std::move(packet),  (packet_count%1024==0));
+    input_buffer.push_front(std::move(packet), flags==0);
     return 0;
   }
 

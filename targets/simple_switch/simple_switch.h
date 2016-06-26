@@ -75,7 +75,8 @@ class SimpleSwitch : public Switch {
   // by default, swapping is off
   explicit SimpleSwitch(int max_port = 256, bool enable_swap = false);
 
-  int receive(int port_num, const char *buffer, int len) override;
+  int receive(int port_num, const char *buffer, int len,
+              uint64_t flags) override;
 
   void start_and_return() override;
 

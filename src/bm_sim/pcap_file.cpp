@@ -246,7 +246,8 @@ void PcapFilesReader::timerFired() {
   std::unique_ptr<PcapPacket> packet = file->current();
 
   if (handler != nullptr)
-    handler(packet->getPort(), packet->getData(), packet->getLength(), cookie);
+    handler(packet->getPort(), packet->getData(), packet->getLength(), 0,
+            cookie);
   else
     pcap_fatal_error("No packet handler set when sending packet");
 
@@ -306,9 +307,9 @@ void PcapFilesReader::start() {
   // XXX infinite packets for testing
    while(true) {
      for (auto &file : files) {
-       std::unique_ptr<PcapPacket> packet = file->current(); 
+       std::unique_ptr<PcapPacket> packet = file->current();
        if (handler != nullptr)
-           handler(packet->getPort(), packet->getData(), packet->getLength(), cookie);
+           handler(packet->getPort(), packet->getData(), packet->getLength(), 0, cookie);
      }
    }
 

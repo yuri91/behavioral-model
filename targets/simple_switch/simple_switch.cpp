@@ -109,7 +109,8 @@ SimpleSwitch::SimpleSwitch(int max_port, bool enable_swap)
 }
 
 int
-SimpleSwitch::receive(int port_num, const char *buffer, int len) {
+SimpleSwitch::receive(int port_num, const char *buffer, int len, uint64_t flags) {
+  (void)flags;
   static int pkt_id = 0;
 
   // this is a good place to call this, because blocking this thread will not

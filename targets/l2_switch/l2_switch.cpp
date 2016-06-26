@@ -53,7 +53,8 @@ class SimpleSwitch : public Switch {
     add_component<McSimplePre>(pre);
   }
 
-  int receive(int port_num, const char *buffer, int len) {
+  int receive(int port_num, const char *buffer, int len, uint64_t flags) {
+    (void)flags;
     static int pkt_id = 0;
 
     auto packet = new_packet_ptr(port_num, pkt_id++, len,

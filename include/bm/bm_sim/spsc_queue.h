@@ -83,7 +83,7 @@ public:
       return _elements.size();
     }
 };
-template <typename Type, typename Compare = std::less<Type>>
+template <typename Type>
 class queue
 {
 private:
@@ -173,6 +173,8 @@ class SPSCQueue {
     return true;
   }
 
+  //! Used by the consumer to wait for 'want' elements.
+  //  Returns number of available elements
   index_t cons_wait_data(index_t want) {
     index_t old = __cons_index;
     while (true) {
@@ -190,26 +192,26 @@ class SPSCQueue {
       if (cons_has_data(want)) { //double check
         break;
       }
-      wait_count_cons++; //XXX stats
       cons_sem.wait(); // finally, wait for notification
     }
     return cons_pi - cons_ci;
   }
 
+  // used by consumer to update shared consumer index and signal the producer
+  // if producer event is reached
   void cons_notify() {
     index_t old = __cons_index;
+    // update shared consumer index
     __cons_index = cons_ci;
-
-    //std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
 
     index_t pe = prod_event;
 
     if (index_t(cons_ci - pe - 1) < index_t(cons_ci - old)) {
       prod_sem.signal();
-      notification_count_cons++;
     }
   }
 
+  // used by consumer to advance its index and check if a notification is needed
   void cons_advance(index_t have) {
     cons_ci += have;
     if(cons_pi == cons_ci) {
@@ -217,6 +219,8 @@ class SPSCQueue {
     }
   }
 
+  // used by the producer to wait until 'want' slots are available to fill
+  // returns the number of available slots
   index_t prod_wait_space(index_t want) { // returns available space
     while (true) {
       if (prod_has_space(want)) {
@@ -229,26 +233,27 @@ class SPSCQueue {
         break;
       }
       // not enough space
-      wait_count_prod++; //XXX stats
       prod_sem.wait();
       prod_ci = __cons_index;
     }
     return prod_ci + capacity - prod_pi;
   }
 
+  // used by producer to update shared producer index and signal the consumer
+  // if consumer event is reached
   void prod_notify() {
     index_t old = __prod_index;
     __prod_index = prod_pi;
-    //std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
 
     index_t ce = cons_event;
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
       cons_sem.signal();
-      notification_count_prod++; // XXX stats
     }
   }
 
+  // used by consumer to advance its index
+  // update shared state and notify only if 'force' is true
   void prod_advance(index_t have, bool force) {
     prod_pi+=have;
     if (force) {
@@ -256,15 +261,18 @@ class SPSCQueue {
     }
   }
 
+  // maps the index position in the ring to the actual array index
   size_t normalize_index(index_t index) {
     return index & (capacity-1);
   }
 
+  // check if 'want' slots are available for the producer
   bool prod_has_space(index_t want) {
     prod_ci = __cons_index;
     return (index_t(prod_pi-prod_ci) <= capacity - want);
   }
 
+  // check if 'want' elements are available for the consumer
   bool cons_has_data(index_t want) {
     cons_pi = __prod_index;
     return (index_t(cons_pi - cons_ci) >= want);
@@ -277,28 +285,21 @@ private:
   alignas(64)
   atomic_index_t __prod_index{0}; // index of the next element to produce
   atomic_index_t prod_event{0}; // wake up when cons_index > prod_event
-  alignas(64)
   index_t prod_ci{0}; // copy of consumer index (used by producer)
   index_t prod_pi{0}; // copy of producer index (used by producer)
-  uint64_t notification_count_prod{0}; // for stats
-  uint64_t wait_count_prod{0}; //XXX stats
 
   alignas(64)
   atomic_index_t __cons_index{0}; // index of the next element to consume
   atomic_index_t cons_event{0}; // wake up when prod_index > cons_event
-  alignas(64)
   index_t cons_ci{0}; // copy of consumer index (used by consumer)
   index_t cons_pi{0}; // copy of producer index (used by consumer)
-  uint64_t notification_count_cons{0};  // for stats
-  uint64_t wait_count_cons{0}; //XXX stats
-  QueueType out_queue;
 
   alignas(64)
+  QueueType out_queue;
   Semaphore prod_sem;
-  alignas(64)
   Semaphore cons_sem;
 
-  const int cons_sleep_time{1}; // microseconds
+  static constexpr int cons_sleep_time{1}; // microseconds
 };
 
 } // namespace bm

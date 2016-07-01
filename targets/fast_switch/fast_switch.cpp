@@ -18,7 +18,6 @@
  *
  */
 
-#include <bm/bm_sim/spsc_queue.h>
 #include <bm/bm_sim/packet.h>
 #include <bm/bm_sim/parser.h>
 #include <bm/bm_sim/tables.h>
@@ -39,16 +38,16 @@
 #include <iostream>
 #include <iomanip>
 
+#define LOCKFREE_QUEUE 1
 
-struct cmp {
-  bool operator()(const std::unique_ptr<bm::Packet> &lhs, const std::unique_ptr<bm::Packet> &rhs) const {
-    return lhs->get_packet_id() < rhs->get_packet_id();
-  }
-};
-
+#if LOCKFREE_QUEUE
+#include <bm/bm_sim/spsc_queue.h>
 template<typename T>
-//using Queue = bm::SPSCQueue<T,std::priority_queue<T,std::vector<T>,cmp>>;
 using Queue = bm::SPSCQueue<T>;
+#else
+#include <bm/bm_sim/queue.h>
+using bm::Queue;
+#endif
 
 using bm::Switch;
 using bm::Packet;
@@ -79,7 +78,11 @@ class FastSwitch : public Switch {
     Parser *parser = this->get_parser("parser");
     parser->parse(packet.get());
 
+#if LOCKFREE_QUEUE
     input_buffer.push_front(std::move(packet), flags==0);
+#else
+    input_buffer.push_front(std::move(packet));
+#endif
     return 0;
   }
 

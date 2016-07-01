@@ -33,6 +33,9 @@
 #include <thread>
 #include <queue>
 
+#include <cmath>
+#include <cassert>
+
 namespace {
 class Semaphore {
  public:
@@ -113,16 +116,15 @@ public:
 template <class T, class QueueType=queue<T>>
 class SPSCQueue {
  public:
-  using index_t = uint32_t;
+  using index_t = uint64_t;
   using atomic_index_t = std::atomic<index_t>;
+  static constexpr size_t max_size = 1ul<<(sizeof(index_t)*8-1);
 
-  SPSCQueue(size_t capacity = 1024)
-    : capacity(capacity), ring(new T[capacity]) {
-    size_t max_size = 1<<(sizeof(index_t)*8-1);
-    if (capacity<1 || capacity>max_size || ((capacity-1) & capacity) !=0 ){
-      std::cout<<"queue size must be a power of 2 and <= "<<max_size<<std::endl;
-      exit(1);
-    }
+  SPSCQueue(size_t max_capacity = 1024)
+    : ring_capacity(1ul<<uint64_t(ceil(log2(max_capacity)))),
+      queue_capacity(max_capacity),
+      ring(new T[ring_capacity]) {
+    assert(ring_capacity <= max_size);
   }
 
   //! Moves \p item to the front of the queue (producer)
@@ -236,7 +238,7 @@ class SPSCQueue {
       prod_sem.wait();
       prod_ci = __cons_index;
     }
-    return prod_ci + capacity - prod_pi;
+    return prod_ci + queue_capacity - prod_pi;
   }
 
   // used by producer to update shared producer index and signal the consumer
@@ -263,13 +265,13 @@ class SPSCQueue {
 
   // maps the index position in the ring to the actual array index
   size_t normalize_index(index_t index) {
-    return index & (capacity-1);
+    return index & (ring_capacity-1);
   }
 
   // check if 'want' slots are available for the producer
   bool prod_has_space(index_t want) {
     prod_ci = __cons_index;
-    return (index_t(prod_pi-prod_ci) <= capacity - want);
+    return (index_t(prod_pi-prod_ci) <= queue_capacity - want);
   }
 
   // check if 'want' elements are available for the consumer
@@ -279,7 +281,8 @@ class SPSCQueue {
   }
 
 private:
-  size_t capacity;
+  size_t ring_capacity;
+  size_t queue_capacity;
   std::unique_ptr<T[]> ring;
 
   alignas(64)

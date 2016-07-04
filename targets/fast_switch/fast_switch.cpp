@@ -133,32 +133,36 @@ void FastSwitch::stats_thread() {
 void FastSwitch::transmit_thread() {
   Deparser *deparser = this->get_deparser("deparser");
   while (1) {
-    std::unique_ptr<Packet> packet;
-    output_buffer.pop_back(&packet);
-    deparser->deparse(packet.get());
-    BMELOG(packet_out, *packet);
-    BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
-                    packet->get_data_size(), packet->get_egress_port());
-    transmit_fn(packet->get_egress_port(),
-                packet->data(), packet->get_data_size());
+    std::vector<std::unique_ptr<Packet>> packets;
+    output_buffer.pop_back(&packets);
+    for (auto& packet : packets) {
+      deparser->deparse(packet.get());
+      BMELOG(packet_out, *packet);
+      BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
+                      packet->get_data_size(), packet->get_egress_port());
+      transmit_fn(packet->get_egress_port(),
+                  packet->data(), packet->get_data_size());
+    }
   }
 }
 
 void FastSwitch::ingress_thread() {
   Pipeline *ingress_mau = this->get_pipeline("ingress");
   while (1) {
-    std::unique_ptr<Packet> packet;
-    input_buffer.pop_back(&packet);
-    //continue;
-    int ingress_port = packet->get_ingress_port();
-    (void) ingress_port;
-    BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
-                    ingress_port);
+    std::vector<std::unique_ptr<Packet>> packets;
+    input_buffer.pop_back(&packets);
+    for (auto& packet : packets) {
+      //continue;
+      int ingress_port = packet->get_ingress_port();
+      (void) ingress_port;
+      BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
+                      ingress_port);
 
 
-    ingress_mau->apply(packet.get());
+      ingress_mau->apply(packet.get());
 
-    process_buffer.push_front(std::move(packet));
+      process_buffer.push_front(std::move(packet));
+    }
   }
 }
 
@@ -167,21 +171,23 @@ void FastSwitch::egress_thread() {
   PHV *phv;
 
   while (1) {
-    std::unique_ptr<Packet> packet;
-    process_buffer.pop_back(&packet);
-    //continue;
-    phv = packet->get_phv();
+    std::vector<std::unique_ptr<Packet>> packets;
+    process_buffer.pop_back(&packets);
+    for (auto& packet : packets) {
+      //continue;
+      phv = packet->get_phv();
 
 
-    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
-    BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
+      int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
+      BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
-    if (egress_port == 511) {
-      BMLOG_DEBUG_PKT(*packet, "Dropping packet");
-    } else {
-      packet->set_egress_port(egress_port);
-      egress_mau->apply(packet.get());
-      output_buffer.push_front(std::move(packet));
+      if (egress_port == 511) {
+        BMLOG_DEBUG_PKT(*packet, "Dropping packet");
+      } else {
+        packet->set_egress_port(egress_port);
+        egress_mau->apply(packet.get());
+        output_buffer.push_front(std::move(packet));
+      }
     }
   }
 }

@@ -60,60 +60,7 @@ class Semaphore {
 
 namespace bm{
 
-template <typename Type, typename Compare = std::less<Type>>
-class priority_queue
-{
-private:
-    std::vector<Type> _elements;
-    Compare _compare;
-public:
-    explicit priority_queue(const Compare& compare = Compare())
-        : _compare{compare}
-    { }
-    void push(Type element)
-    {
-        _elements.push_back(std::move(element));
-        std::push_heap(_elements.begin(), _elements.end(), _compare);
-    }
-    Type pop()
-    {
-        std::pop_heap(_elements.begin(), _elements.end(), _compare);
-        Type result = std::move(_elements.back());
-        _elements.pop_back();
-        return std::move(result);
-    }
-    size_t size() {
-      return _elements.size();
-    }
-};
-template <typename Type>
-class queue
-{
-private:
-    std::vector<Type> _elements;
-public:
-    explicit queue()
-    { }
-    void push(Type&& element)
-    {
-        _elements.push_back(std::move(element));
-    }
-    void push(const Type& element)
-    {
-        _elements.push_back(element);
-    }
-    Type pop()
-    {
-        Type result = std::move(_elements.back());
-        _elements.pop_back();
-        return std::move(result);
-    }
-    size_t size() {
-      return _elements.size();
-    }
-};
-
-template <class T, class QueueType=queue<T>>
+template <class T>
 class SPSCQueue {
  public:
   using index_t = uint64_t;
@@ -138,15 +85,21 @@ class SPSCQueue {
   //! Pops an element from the back of the queue: moves the element to `*pItem`.
   // (consumer)
   bool pop_back(T* pItem) {
-    if (out_queue.size() == 0 || cons_has_data(1)) {
-      index_t num = cons_wait_data(1);
-      for (index_t i = 0; i < num; i++) {
-        out_queue.push(std::move(ring[normalize_index(cons_ci+i)]));
-      }
-      cons_advance(num);
+    cons_wait_data(1);
+    *pItem = std::move(ring[normalize_index(cons_ci)]);
+    cons_advance(1);
+
+    return true;
+  }
+  //! Pops an element from the back of the queue: moves the element to `*pItem`.
+  // (consumer)
+  bool pop_back(std::vector<T>* container) {
+    index_t num = cons_wait_data(1);
+    for (index_t i = 0; i < num; i++) {
+      container->push_back(std::move(ring[normalize_index(cons_ci+i)]));
     }
-    *pItem = std::move(out_queue.pop());
-    //out_queue.pop();
+    cons_advance(num);
+
     return true;
   }
 
@@ -247,6 +200,7 @@ class SPSCQueue {
     index_t old = __prod_index;
     __prod_index = prod_pi;
 
+
     index_t ce = cons_event;
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
@@ -298,7 +252,6 @@ private:
   index_t cons_pi{0}; // copy of producer index (used by consumer)
 
   alignas(64)
-  QueueType out_queue;
   Semaphore prod_sem;
   Semaphore cons_sem;
 

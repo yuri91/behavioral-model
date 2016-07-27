@@ -60,7 +60,7 @@ class FastSwitch : public Switch {
  public:
   FastSwitch()
     : Switch(true),  // enable_swap = false
-      input_buffer(1024), process_buffer(1024), output_buffer(1024) { }
+      input_buffer(512), process_buffer(512), output_buffer(512) { }
 
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
     static int pkt_id = 0;
@@ -74,7 +74,7 @@ class FastSwitch : public Switch {
 
     BMELOG(packet_in, *packet);
 
-    packet_count++;
+    packet_count_in++;
     Parser *parser = this->get_parser("parser");
     parser->parse(packet.get());
 
@@ -87,7 +87,7 @@ class FastSwitch : public Switch {
   }
 
   void start_and_return() {
-    std::thread t1(&FastSwitch::ingress_thread, this);
+  std::thread t1(&FastSwitch::ingress_thread, this);
     t1.detach();
     std::thread t2(&FastSwitch::egress_thread, this);
     t2.detach();
@@ -111,7 +111,10 @@ class FastSwitch : public Switch {
   bool swap_happened{false};
 
   // XXX variables for stat printing
-  uint64_t packet_count{0};  // one entry per port
+  uint64_t packet_count_in{0};
+  uint64_t packet_count_out{0};
+  uint64_t avg_latency{0};
+  uint64_t max_latency{0};
 
 };
 
@@ -120,11 +123,15 @@ void FastSwitch::stats_thread() {
 
   int period = 200;
   while(true) {
-    std::cout<<period*1000000.0/(packet_count-old_packet_count)<<" ns/pkt "
-             <<" "<<1000.0*(packet_count-old_packet_count)/period<<" pkt/s"
+    float delta_t = period*1000000.0/(packet_count_in-old_packet_count);
+
+    std::cout<<"cycle time: "<<delta_t<<" ns/pkt"<<" / "
+             <<"throughput:  "<<1000000000.0/delta_t<<" pkt/s"<<" / "
+             <<"avg latency: "<<(0.000001*avg_latency)/packet_count_out<<" ms"<<" / "
+             <<"max latency: "<<0.000001*max_latency<<" ms"
              <<std::endl;
 
-    old_packet_count=packet_count;
+    old_packet_count=packet_count_in;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(period));
   }
@@ -140,8 +147,18 @@ void FastSwitch::transmit_thread() {
       BMELOG(packet_out, *packet);
       BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                       packet->get_data_size(), packet->get_egress_port());
-      transmit_fn(packet->get_egress_port(),
-                  packet->data(), packet->get_data_size());
+      auto ingress_ts = packet->get_ingress_ts();
+      std::chrono::nanoseconds delta = std::chrono::system_clock::now() - ingress_ts;
+      if (uint64_t(delta.count()) > max_latency) max_latency = delta.count();
+      avg_latency+= delta.count();
+      packet_count_out++;
+
+      int egress_port = packet->get_egress_port();
+      if (egress_port == 511) {
+        BMLOG_DEBUG_PKT(*packet, "Dropping packet");
+      } else {
+        transmit_fn(egress_port, packet->data(), packet->get_data_size());
+      }
     }
   }
 }
@@ -175,19 +192,14 @@ void FastSwitch::egress_thread() {
     process_buffer.pop_back(&packets);
     for (auto& packet : packets) {
       //continue;
+
       phv = packet->get_phv();
-
-
       int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
       BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
-      if (egress_port == 511) {
-        BMLOG_DEBUG_PKT(*packet, "Dropping packet");
-      } else {
-        packet->set_egress_port(egress_port);
-        egress_mau->apply(packet.get());
-        output_buffer.push_front(std::move(packet));
-      }
+      packet->set_egress_port(egress_port);
+      egress_mau->apply(packet.get());
+      output_buffer.push_front(std::move(packet));
     }
   }
 }

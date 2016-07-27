@@ -210,6 +210,7 @@ class Packet final {
   const PacketBuffer &get_packet_buffer() const { return buffer; }
 
   uint64_t get_ingress_ts_ms() const { return ingress_ts_ms; }
+  std::chrono::time_point<clock> get_ingress_ts() const { return ingress_ts; }
 
   // TODO(antonin): use references instead?
   //! Get a pointer to the packet's phv.

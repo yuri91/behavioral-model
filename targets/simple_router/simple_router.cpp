@@ -37,7 +37,10 @@
 #include <chrono>
 
 using bm::Switch;
-using bm::Queue;
+//using bm::Queue;
+#include <bm/bm_sim/spsc_queue.h>
+template<typename T>
+using Queue=bm::SPSCQueue<T>;
 using bm::Packet;
 using bm::PHV;
 using bm::Parser;
@@ -53,7 +56,7 @@ class SimpleSwitch : public Switch {
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
     (void) flags;
     static int pkt_id = 0;
-
+    packet_count_in++;
     if (this->do_swap() == 0)  // a swap took place
       swap_happened = true;
 
@@ -62,7 +65,7 @@ class SimpleSwitch : public Switch {
 
     BMELOG(packet_in, *packet);
 
-    input_buffer.push_front(std::move(packet));
+    input_buffer.push_front(std::move(packet), flags==0);
     return 0;
   }
 
@@ -71,17 +74,52 @@ class SimpleSwitch : public Switch {
     t1.detach();
     std::thread t2(&SimpleSwitch::transmit_thread, this);
     t2.detach();
+    std::thread t3(&SimpleSwitch::stats_thread, this);
+    t3.detach();
   }
 
  private:
   void pipeline_thread();
   void transmit_thread();
+  void stats_thread();
 
  private:
   Queue<std::unique_ptr<Packet> > input_buffer;
   Queue<std::unique_ptr<Packet> > output_buffer;
   bool swap_happened{false};
+
+  // XXX variables for stat printing
+  uint64_t packet_count_in{0};
+  uint64_t packet_count_out{0};
+  uint64_t avg_latency{0};
+  uint64_t max_latency{0};
 };
+
+void SimpleSwitch::stats_thread() {
+  uint64_t old_packet_count=0;
+  uint64_t old_prod = 0;
+  uint64_t old_cons=0;
+  int period = 200;
+  while(true) {
+    float delta_t = period*1000000.0/(packet_count_in-old_packet_count);
+
+    std::cout<<"cycle time: "<<delta_t<<" ns/pkt"<<" / "
+             <<"throughput:  "<<1000000000.0/delta_t<<" pkt/s"<<" / "
+             <<"avg latency: "<<(0.000001*avg_latency)/packet_count_out<<" ms"<<" / "
+             <<"max latency: "<<0.000001*max_latency<<" ms"
+             <<std::endl;
+
+    float delta_p = packet_count_in-old_packet_count;
+    std::cout<<"notifications:  "<<(input_buffer.prod_not-old_prod)/delta_p
+             <<" -> "<<(input_buffer.cons_not-old_cons)/delta_p<<std::endl;
+    
+    old_prod=input_buffer.prod_not;
+    old_cons=input_buffer.cons_not;
+    old_packet_count=packet_count_in;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(period));
+  }
+}
 
 void SimpleSwitch::transmit_thread() {
   while (1) {
@@ -90,6 +128,11 @@ void SimpleSwitch::transmit_thread() {
     BMELOG(packet_out, *packet);
     BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
                     packet->get_data_size(), packet->get_egress_port());
+    auto ingress_ts = packet->get_ingress_ts();
+    std::chrono::nanoseconds delta = std::chrono::system_clock::now() - ingress_ts;
+    if (uint64_t(delta.count()) > max_latency) max_latency = delta.count();
+    avg_latency+= delta.count();
+    packet_count_out++;
     transmit_fn(packet->get_egress_port(),
                 packet->data(), packet->get_data_size());
   }

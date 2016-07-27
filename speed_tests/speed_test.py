@@ -92,7 +92,7 @@ if __name__ == "__main__":
     time.sleep(.1)
     h1.terminate()
     switch.terminate()
-    s = h2.stdout.readlines()[-1].decode('utf-8').strip()
+    s = h1.stderr.readlines()[-1].decode('utf-8').strip()
     h2.wait()
     switch.wait()
     h1.wait()

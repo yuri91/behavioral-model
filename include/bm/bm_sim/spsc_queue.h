@@ -55,6 +55,8 @@ class Semaphore {
   mutable std::condition_variable condition;
   bool flag;
 };
+
+constexpr int cons_sleep_time{1}; // microseconds
 }
 
 
@@ -163,6 +165,7 @@ class SPSCQueue {
 
     if (index_t(cons_ci - pe - 1) < index_t(cons_ci - old)) {
       prod_sem.signal();
+      cons_not++;
     }
   }
 
@@ -205,6 +208,7 @@ class SPSCQueue {
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
       cons_sem.signal();
+      prod_not++;
     }
   }
 
@@ -255,7 +259,9 @@ private:
   Semaphore prod_sem;
   Semaphore cons_sem;
 
-  static constexpr int cons_sleep_time{1}; // microseconds
+ public:
+  uint64_t cons_not{0};
+  uint64_t prod_not{0};
 };
 
 } // namespace bm

@@ -9,7 +9,7 @@
 
 #include "./netmap/netmap_manager.h"
 
-#define POLL_TIMEOUT 10
+#define POLL_TIMEOUT 1
 
 void NetmapManager::set_packet_handler(packet_handler_t ph, void* c) {
   std::lock_guard<std::mutex> lock(handler_mutex);

@@ -49,8 +49,8 @@ class RandomGen {
 
 class SwitchTest : public bm::Switch {
  public:
-  int receive(int port_num, const char *buffer, int len) override {
-    (void) port_num; (void) buffer; (void) len;
+  int receive(int port_num, const char *buffer, int len, uint64_t flags) override {
+    (void) port_num; (void) buffer; (void) len; (void) flags;
     return 0;
   }
 

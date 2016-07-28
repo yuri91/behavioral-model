@@ -55,7 +55,7 @@ class NetmapInterface {
     return nm_inject(d, buf, len);
   }
   int nextpkt(char** buf) {
-    struct nm_pkthdr h{{0,0},0,0};
+    struct nm_pkthdr h{};
     *buf = reinterpret_cast<char*>(nm_nextpkt(d, &h));
     return h.len;
   }

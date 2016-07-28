@@ -24,6 +24,7 @@
 #ifndef BM_BM_SIM_SPSC_QUEUE_H_
 #define BM_BM_SIM_SPSC_QUEUE_H_
 
+#include <memory>
 #include <string>
 #include <iostream>
 #include <atomic>
@@ -37,6 +38,12 @@
 #include <cassert>
 
 namespace {
+constexpr int cons_sleep_time{1}; // microseconds
+}
+
+
+namespace bm{
+
 class Semaphore {
  public:
   Semaphore():flag(false){}
@@ -56,12 +63,17 @@ class Semaphore {
   bool flag;
 };
 
-constexpr int cons_sleep_time{1}; // microseconds
-}
 
-
-namespace bm{
-
+/*
+ * This class implements a Single-producer Single-consumer lockless queue.
+ * It uses atomic variables for the shared indexes between consumer and producer
+ * threads. In order to avoid unnecessary notifications on the semaphores, both
+ * the producer and the consumer set an event index corresponding to the point
+ * in the queue at which the other thread issues a notification.
+ * The consumer sets the event at the next producer index, while the producer
+ * can set a point further on in the ring.
+ *
+ */
 template <class T>
 class SPSCQueue {
  public:
@@ -69,11 +81,20 @@ class SPSCQueue {
   using atomic_index_t = std::atomic<index_t>;
   static constexpr size_t max_size = 1ul<<(sizeof(index_t)*8-1);
 
-  SPSCQueue(size_t max_capacity = 1024)
+  SPSCQueue(size_t max_capacity = 1024, 
+            std::shared_ptr<Semaphore> cs=nullptr,
+            std::shared_ptr<Semaphore> ps=nullptr)
     : ring_capacity(1ul<<uint64_t(ceil(log2(max_capacity)))),
       queue_capacity(max_capacity),
-      ring(new T[ring_capacity]) {
+      ring(new T[ring_capacity]),
+      cons_sem_ptr(cs),prod_sem_ptr(ps) {
     assert(ring_capacity <= max_size);
+    if (cons_sem_ptr.get()==nullptr) {
+      cons_sem_ptr = std::make_shared<Semaphore>();
+    }
+    if (prod_sem_ptr.get()==nullptr) {
+      prod_sem_ptr = std::make_shared<Semaphore>();
+    }
   }
 
   //! Moves \p item to the front of the queue (producer)
@@ -105,6 +126,51 @@ class SPSCQueue {
     return true;
   }
 
+  bool pop_back_nb(T* pItem) {
+    if (!cons_has_data(1)) {
+      return false;
+    }
+
+    *pItem = std::move(ring[normalize_index(cons_ci)]);
+    cons_advance(1);
+
+    return true;
+  }
+
+  //! Used by the consumer to wait for 'want' elements.
+  //  Returns number of available elements
+  index_t cons_wait_data(index_t want) {
+    index_t old = __cons_index;
+    while (true) {
+      if (cons_has_data(want)) break;
+      // sleep a while and retry
+      std::this_thread::sleep_for(std::chrono::microseconds(cons_sleep_time));
+      if (cons_has_data(want)) break;
+
+      if (cons_set_event(want)) break;
+
+      cons_sem_ptr->wait(); // wait for notification
+    }
+    return cons_pi - cons_ci;
+  }
+
+  //  Used by the consumer to set the cons_event.
+  //  Returns true if `wait` elements available, false otherwise
+  bool cons_set_event(index_t want) {
+    //request wake up when prod_index > cons_event
+    cons_event = cons_ci + want - 1;
+    cons_notify();
+    if (cons_has_data(want)) { //double check
+      return true;
+    }
+    return false;
+  }
+
+  // NOTE: this is an approximation of the real size
+  size_t size() {
+    return __prod_index - __cons_index;
+  }
+
   //! Deleted copy constructor
   SPSCQueue(const SPSCQueue &) = delete;
   //! Deleted copy assignment operator
@@ -130,29 +196,6 @@ class SPSCQueue {
     return true;
   }
 
-  //! Used by the consumer to wait for 'want' elements.
-  //  Returns number of available elements
-  index_t cons_wait_data(index_t want) {
-    index_t old = __cons_index;
-    while (true) {
-      if (cons_has_data(want)) { //queue not empty, go ahead
-        break;
-      }
-      // sleep a while and retry
-      std::this_thread::sleep_for(std::chrono::microseconds(cons_sleep_time));
-      if (cons_has_data(want)) { //queue not empty, go ahead
-        break;
-      }
-      // no data, request wake up when prod_index > cons_event
-      cons_event = cons_ci + want - 1;
-      cons_notify();
-      if (cons_has_data(want)) { //double check
-        break;
-      }
-      cons_sem.wait(); // finally, wait for notification
-    }
-    return cons_pi - cons_ci;
-  }
 
   // used by consumer to update shared consumer index and signal the producer
   // if producer event is reached
@@ -164,7 +207,7 @@ class SPSCQueue {
     index_t pe = prod_event;
 
     if (index_t(cons_ci - pe - 1) < index_t(cons_ci - old)) {
-      prod_sem.signal();
+      prod_sem_ptr->signal();
       cons_not++;
     }
   }
@@ -191,7 +234,7 @@ class SPSCQueue {
         break;
       }
       // not enough space
-      prod_sem.wait();
+      prod_sem_ptr->wait();
       prod_ci = __cons_index;
     }
     return prod_ci + queue_capacity - prod_pi;
@@ -207,7 +250,7 @@ class SPSCQueue {
     index_t ce = cons_event;
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
-      cons_sem.signal();
+      cons_sem_ptr->signal();
       prod_not++;
     }
   }
@@ -239,9 +282,13 @@ class SPSCQueue {
   }
 
 private:
-  size_t ring_capacity;
-  size_t queue_capacity;
-  std::unique_ptr<T[]> ring;
+  alignas(64)
+  const size_t ring_capacity;
+  const size_t queue_capacity;
+  const std::unique_ptr<T[]> ring;
+  alignas(64)
+  std::shared_ptr<Semaphore> cons_sem_ptr;
+  std::shared_ptr<Semaphore> prod_sem_ptr;
 
   alignas(64)
   atomic_index_t __prod_index{0}; // index of the next element to produce
@@ -255,12 +302,10 @@ private:
   index_t cons_ci{0}; // copy of consumer index (used by consumer)
   index_t cons_pi{0}; // copy of producer index (used by consumer)
 
-  alignas(64)
-  Semaphore prod_sem;
-  Semaphore cons_sem;
-
  public:
+  alignas(64)
   uint64_t cons_not{0};
+  alignas(64)
   uint64_t prod_not{0};
 };
 

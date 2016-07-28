@@ -42,6 +42,7 @@
 
 #if LOCKFREE_QUEUE
 #include <bm/bm_sim/spsc_queue.h>
+#include <bm/bm_sim/lockless_queueing.h>
 template<typename T>
 using Queue = bm::SPSCQueue<T>;
 #else
@@ -56,30 +57,49 @@ using bm::Parser;
 using bm::Deparser;
 using bm::Pipeline;
 
+
+#define num_queues 16
+
+struct WorkerMapper {
+  WorkerMapper(size_t nb_workers)
+      : nb_workers(nb_workers) { }
+
+  size_t operator()(size_t queue_id) const {
+    return queue_id % nb_workers;
+  }
+
+  size_t nb_workers;
+};
+
 class FastSwitch : public Switch {
  public:
   FastSwitch()
-    : Switch(true),  // enable_swap = false
-      input_buffer(512), process_buffer(512), output_buffer(512) { }
+    : Switch(true),  // enable_swap = false  
+    input_buffer(num_queues,1,1024, WorkerMapper(1)),
+    process_buffer(512), output_buffer(512) { }
 
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
-    static int pkt_id = 0;
+    //static int pkt_id = 0;
 
     (void)flags;
+    (void)buffer;
+    (void)len;
+    (void)port_num;
     //if (this->do_swap() == 0)  // a swap took place
     //  swap_happened = true;
 
-    auto packet = new_packet_ptr(port_num, pkt_id++, len,
-                                 bm::PacketBuffer(len+512, buffer, len));
+    //auto packet = new_packet_ptr(port_num, pkt_id++, len,
+    //                             bm::PacketBuffer(len+512, buffer, len));
 
     BMELOG(packet_in, *packet);
 
     packet_count_in++;
-    Parser *parser = this->get_parser("parser");
-    parser->parse(packet.get());
+    //Parser *parser = this->get_parser("parser");
+    //parser->parse(packet.get());
 
 #if LOCKFREE_QUEUE
-    input_buffer.push_front(std::move(packet), flags==0);
+    //input_buffer.push_front(std::move(packet), flags==0);
+    input_buffer.push_front(packet_count_in%num_queues, 0);
 #else
     input_buffer.push_front(std::move(packet));
 #endif
@@ -105,7 +125,8 @@ class FastSwitch : public Switch {
   void stats_thread();
 
  private:
-  Queue<std::unique_ptr<Packet>> input_buffer;
+  //Queue<std::unique_ptr<Packet>> input_buffer;
+  bm::QueueingLogicLL<std::unique_ptr<Packet>,WorkerMapper> input_buffer;
   Queue<std::unique_ptr<Packet>> process_buffer;
   Queue<std::unique_ptr<Packet>> output_buffer;
   bool swap_happened{false};
@@ -164,12 +185,15 @@ void FastSwitch::transmit_thread() {
 }
 
 void FastSwitch::ingress_thread() {
-  Pipeline *ingress_mau = this->get_pipeline("ingress");
+  //Pipeline *ingress_mau = this->get_pipeline("ingress");
   while (1) {
-    std::vector<std::unique_ptr<Packet>> packets;
-    input_buffer.pop_back(&packets);
+    std::unique_ptr<Packet> packet;
+    size_t port;
+    input_buffer.pop_back(0,&port,&packet);
+
+#if 0
     for (auto& packet : packets) {
-      //continue;
+      continue;
       int ingress_port = packet->get_ingress_port();
       (void) ingress_port;
       BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
@@ -180,6 +204,7 @@ void FastSwitch::ingress_thread() {
 
       process_buffer.push_front(std::move(packet));
     }
+#endif
   }
 }
 

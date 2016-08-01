@@ -24,10 +24,15 @@ To use the CLI, you will need to install the
     sudo pip install nnpy
 
 
+
+## Temporary workaround
+
+edit `tools/get-version.sh` and change `#!/bin/bash` with `#!/usr/local/bin/bas`
+
 ## Building the code
 
     1. ./autogen.sh
-    2. ./configure 'CXXFLAGS=-I/usr/local/include' 'CFLAGS=-I/usr/local/include' 'LDFLAGS=-L/usr/local/lib /home/yuri/cxa_thread_atexit/libcxa_thread_atexit.a'
+    2. ./configure 'CXXFLAGS=-I/usr/local/include' 'CFLAGS=-I/usr/local/include' 'LDFLAGS=-L/usr/local/lib'
     3. make
 
 Debug logging is enabled by default. If you want to disable it for performance

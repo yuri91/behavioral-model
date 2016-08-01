@@ -21,7 +21,7 @@ On Freebsd 10, the following packages are required:
 To use the CLI, you will need to install the
 [nnpy](https://github.com/nanomsg/nnpy) Python package:
 
-    pip install nnpy
+    sudo pip install nnpy
 
 
 ## Building the code

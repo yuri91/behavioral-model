@@ -44,6 +44,7 @@ bool NetmapManager::send(int port, const char* buf, int len) {
   while (r <= 0) {
     // poll(&pfd,1,-1);
 
+    // XXX non-blocking
     it->second->sync_tx();
     r = it->second->inject(buf, len);
   }
@@ -96,17 +97,12 @@ void NetmapManager::receive_loop() {
       if (pfds[i].revents & POLLIN) {
         char* buf = nullptr;
         int len = p.second->nextpkt(&buf);
-        char* buf_next = nullptr;
-        int len_next = 0;
-        uint64_t flags = 0;
-        while (true) {
-          if (len <= 0) {
-            break;
-          }
-          len_next = p.second->nextpkt(&buf_next);
+        while (len > 0) {
+          char* buf_next = nullptr;
+          int len_next = p.second->nextpkt(&buf_next);
           // char* bufcopy = new char[len];
           // memcpy(bufcopy,buf,len);
-          flags = (len_next > 0);
+          uint64_t flags = (len_next > 0);
           if (packet_handler) {
             packet_handler(p.first, buf, len, flags, packet_cookie);
           }

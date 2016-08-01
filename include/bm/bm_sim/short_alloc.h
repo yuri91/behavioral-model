@@ -30,7 +30,11 @@ namespace detail {
 
 // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56019
 // TODO(antonin): find a better way to do this?
-typedef std::max_align_t max_align_t;
+#if __GNUC__ == 4 && __GNUC_MINOR__ <= 8 && !defined(__clang__)
+  typedef ::max_align_t max_align_t;
+#else
+  typedef std::max_align_t max_align_t;
+#endif
 
 template <std::size_t N, std::size_t alignment = alignof(max_align_t)>
 class arena

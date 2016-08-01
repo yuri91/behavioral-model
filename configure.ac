@@ -88,8 +88,12 @@ AM_CONDITIONAL([COND_FREEBSD], [test "x$FREEBSD" == "xyes"])
 
 
 # Checks for programs.
-AC_PROG_CXX()
-AC_PROG_CC()
+AS_IF([test "x$FREEBSD" == "xyes"], [
+	MY_CXX=clang++
+	MY_CC=clang
+])
+AC_PROG_CXX($MY_CXX)
+AC_PROG_CC($MY_CC)
 LT_INIT
 
 AC_CONFIG_MACRO_DIR([m4])

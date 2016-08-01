@@ -279,18 +279,17 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
     ifaces.clear();
   }
 
-  if (vm.count("use-netmap")) {
-    use_netmap = true;
-  }
-
   if (use_files && packet_in) {
     std::cout << "Error: --use-files and --packet-in are exclusive\n";
     exit(1);
   }
 
-  if (use_netmap && (packet_in || use_files)) {
-    std::cout << "Error: --use-files and --packet-in are exclusive with --use-netmap\n";
-    exit(1);
+  if (vm.count("use-netmap")) {
+    if (packet_in || use_files) {
+      std::cout << "Error: --use-files and --packet-in are exclusive with --use-netmap\n";
+      exit(1);
+    }
+    use_netmap = true;
   }
 
   if (vm.count("debugger-addr")) {

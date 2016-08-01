@@ -91,7 +91,7 @@ class FastSwitch : public Switch {
     //auto packet = new_packet_ptr(port_num, pkt_id++, len,
     //                             bm::PacketBuffer(len+512, buffer, len));
 
-    BMELOG(packet_in, *packet);
+    //BMELOG(packet_in, *packet);
 
     packet_count_in++;
     //Parser *parser = this->get_parser("parser");
@@ -131,7 +131,7 @@ class FastSwitch : public Switch {
   bm::QueueingLogicLL<std::unique_ptr<Packet>,WorkerMapper> input_buffer;
   Queue<std::unique_ptr<Packet>> process_buffer;
   Queue<std::unique_ptr<Packet>> output_buffer;
-  bool swap_happened{false};
+  //bool swap_happened{false};
 
   static constexpr size_t nb_egress_threads = 1u;
 

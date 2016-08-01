@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.68])
-AC_INIT([bm], [m4_esyscmd(tools/get_version.sh)],
+AC_INIT([bm], [m4_esyscmd(bash tools/get_version.sh)],
         [antonin@barefootnetworks.com])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_CONFIG_SRCDIR([src/bm_sim/checksums.cpp])
@@ -85,9 +85,6 @@ case $host_os in
 esac
 AM_CONDITIONAL([COND_FREEBSD], [test "x$FREEBSD" == "xyes"])
 
-
-
-# Checks for programs.
 AC_PROG_CXX()
 AC_PROG_CC()
 LT_INIT
@@ -149,7 +146,7 @@ AC_SUBST([AM_CPPFLAGS], ["$MY_CPPFLAGS \
                           -isystem\$(top_srcdir)/third_party/jsoncpp/include \
                           -isystem\$(top_srcdir)/third_party/spdlog/include"])
 
-AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Werror -Wno-shift-negative-value $FREEBSD_CXXFLAGS"])
+AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Werror  $FREEBSD_CXXFLAGS"])
 AC_SUBST([AM_CFLAGS], [""])
 
 

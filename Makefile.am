@@ -1,5 +1,10 @@
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
+# freebsd dir must be compiled before targets.
+if COND_FREEBSD
+    MAYBE_FREEBSD = freebsd
+endif
+
 if COND_TARGETS
     MAYBE_TARGETS = targets
 endif
@@ -8,12 +13,9 @@ if COND_PDFIXED
     MAYBE_PDFIXED = pdfixed
 endif
 
-if COND_FREEBSD
-    MAYBE_FREEBSD = freebsd
-endif
-
-SUBDIRS = . thrift_src third_party src include tests $(MAYBE_FREEBSD) \
-$(MAYBE_TARGETS) tools $(MAYBE_PDFIXED)
+SUBDIRS = thrift_src third_party src include tests $(MAYBE_FREEBSD) \
+$(MAYBE_TARGETS) tools \
+$(MAYBE_PDFIXED)
 
 # I am leaving all style-related files (cpplint) out of dist on purpose, maybe
 # will add them later if needed

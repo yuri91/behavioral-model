@@ -16,7 +16,7 @@ On Freebsd 10, the following packages are required:
 - thrift
 - thrift-cpp
 - py27-thrift
-- nanomsg``
+- nanomsg
 
 To use the CLI, you will need to install the
 [nnpy](https://github.com/nanomsg/nnpy) Python package:

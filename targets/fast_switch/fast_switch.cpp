@@ -107,19 +107,21 @@ class FastSwitch : public Switch {
   }
 
   void start_and_return() {
-  std::thread t1(&FastSwitch::ingress_thread, this);
-    t1.detach();
-    std::thread t2(&FastSwitch::egress_thread, this);
-    t2.detach();
-    std::thread t3(&FastSwitch::transmit_thread, this);
-    t3.detach();
-    std::thread t4(&FastSwitch::stats_thread, this);
-    t4.detach();
+    std::thread ti(&FastSwitch::ingress_thread, this);
+    ti.detach();
+    //for (size_t i = 0; i < nb_egress_threads; i++) {
+    //  std::thread te(&FastSwitch::egress_thread, this, i);
+    //  te.detach();
+    //}
+    //std::thread tt(&FastSwitch::transmit_thread, this);
+    //tt.detach();
+    std::thread ts(&FastSwitch::stats_thread, this);
+    ts.detach();
   }
 
  private:
   void ingress_thread();
-  void egress_thread();
+  void egress_thread(size_t i);
   void transmit_thread();
 
   void stats_thread();
@@ -130,6 +132,8 @@ class FastSwitch : public Switch {
   Queue<std::unique_ptr<Packet>> process_buffer;
   Queue<std::unique_ptr<Packet>> output_buffer;
   bool swap_happened{false};
+
+  static constexpr size_t nb_egress_threads = 1u;
 
   // XXX variables for stat printing
   uint64_t packet_count_in{0};
@@ -208,7 +212,9 @@ void FastSwitch::ingress_thread() {
   }
 }
 
-void FastSwitch::egress_thread() {
+void FastSwitch::egress_thread(size_t i) {
+  (void)i;
+
   Pipeline *egress_mau = this->get_pipeline("egress");
   PHV *phv;
 

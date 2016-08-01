@@ -43,13 +43,10 @@ class QueueingLogicLL {
   QueueingLogicLL(size_t nb_queues, size_t nb_workers, size_t capacity,
                   FMap map_to_worker)
       : nb_queues(nb_queues), nb_workers(nb_workers),
-        map_to_worker(map_to_worker), reverse_mapping(nb_workers){
+        map_to_worker(map_to_worker), workers(nb_workers){
     for (size_t i = 0; i < nb_queues; i++){
-      reverse_mapping[map_to_worker(i)].push_back(i);
-      if (i/nb_workers==0) {
-        worker_sem.push_back(std::make_shared<Semaphore>());
-      }
-      queues.emplace_back(new SPSCQueue<T>(capacity,worker_sem.back()));
+      workers[map_to_worker(i)].add_queue(i);
+      queues.emplace_back(new SPSCQueue<T>(capacity,workers[map_to_worker(i)].sem));
     }
   }
 
@@ -66,27 +63,35 @@ class QueueingLogicLL {
 
   void pop_back(size_t worker_id, size_t *queue_id, T *pItem) {
     while(true) {
-      for (auto i : reverse_mapping[worker_id]) {
-        if (queues[i]->pop_back_nb(pItem)) {
-          *queue_id = i;
+      WorkerInfo& worker = workers[worker_id];
+      size_t n = worker.queues.size();
+      for (size_t i = 0; i < n; i++) {
+        size_t q = worker.next_queue();
+        if (queues[q]->pop_back_nb(pItem)) {
+          *queue_id = q;
+          worker.next_queue();
           return;
         }
       }
       std::this_thread::sleep_for(std::chrono::microseconds(1));
-      for (auto i : reverse_mapping[worker_id]) {
-        if (queues[i]->pop_back_nb(pItem)) {
-          *queue_id = i;
+      for (size_t i = 0; i < n; i++) {
+        size_t q = worker.next_queue();
+        if (queues[q]->pop_back_nb(pItem)) {
+          *queue_id = q;
+          worker.next_queue();
           return;
         }
       }
-      for (auto i : reverse_mapping[worker_id]) {
-        if (queues[i]->cons_set_event(1)) {
-          queues[i]->pop_back_nb(pItem);
-          *queue_id = i;
+      for (size_t i = 0; i < n; i++) {
+        size_t q = worker.next_queue();
+        if (queues[q]->cons_set_event(1)) {
+          queues[q]->pop_back_nb(pItem);
+          *queue_id = q;
+          worker.next_queue();
           return;
         }
       }
-      worker_sem[worker_id]->wait();
+      worker.sem->wait();
     }
   }
 
@@ -105,13 +110,36 @@ class QueueingLogicLL {
   //! Deleted move assignment operator
   QueueingLogicLL &&operator =(QueueingLogicLL &&) = delete;
 
+
+  struct WorkerInfo {
+    std::shared_ptr<Semaphore> sem;
+    std::vector<size_t> queues;
+    size_t cur_idx;
+
+    WorkerInfo() {
+      sem = std::make_shared<Semaphore>();
+      cur_idx = -1;
+    }
+
+    void add_queue(size_t q) {
+      queues.push_back(q);
+    }
+
+    size_t next_queue() {
+      cur_idx++;
+      if (cur_idx == queues.size()) {
+        cur_idx = 0;
+      }
+      return queues[cur_idx];
+    }
+  };
+
  private:
   size_t nb_queues;
   size_t nb_workers;
   FMap map_to_worker;
   std::vector<std::unique_ptr<SPSCQueue<T>>> queues;
-  std::vector<std::vector<size_t>> reverse_mapping;
-  std::vector<std::shared_ptr<Semaphore>> worker_sem;
+  std::vector<WorkerInfo> workers;
 };
 
 }  // namespace bm

@@ -129,7 +129,7 @@ class FastSwitch : public Switch {
   bm::QueueingLogicLL<std::unique_ptr<Packet>,WorkerMapper> input_buffer;
   Queue<std::unique_ptr<Packet>> process_buffer;
   Queue<std::unique_ptr<Packet>> output_buffer;
-  bool swap_happened{false};
+  //bool swap_happened{false};
 
   // XXX variables for stat printing
   uint64_t packet_count_in{0};

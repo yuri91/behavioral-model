@@ -149,7 +149,7 @@ AC_SUBST([AM_CPPFLAGS], ["$MY_CPPFLAGS \
                           -isystem\$(top_srcdir)/third_party/jsoncpp/include \
                           -isystem\$(top_srcdir)/third_party/spdlog/include"])
 
-AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Werror -Wno-shift-negative-value $FREEBSD_CXXFLAGS"])
+AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Werror -Wno-shift-sign-overflow $FREEBSD_CXXFLAGS"])
 AC_SUBST([AM_CFLAGS], [""])
 
 

@@ -140,7 +140,6 @@ class SPSCQueue {
   //! Used by the consumer to wait for 'want' elements.
   //  Returns number of available elements
   index_t cons_wait_data(index_t want) {
-    index_t old = __cons_index;
     while (true) {
       if (cons_has_data(want)) break;
       // sleep a while and retry

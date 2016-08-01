@@ -91,7 +91,7 @@ class FastSwitch : public Switch {
     //auto packet = new_packet_ptr(port_num, pkt_id++, len,
     //                             bm::PacketBuffer(len+512, buffer, len));
 
-    BMELOG(packet_in, *packet);
+    //BMELOG(packet_in, *packet);
 
     packet_count_in++;
     //Parser *parser = this->get_parser("parser");

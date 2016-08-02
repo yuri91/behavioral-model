@@ -75,7 +75,7 @@ class FastSwitch : public Switch {
  public:
   FastSwitch()
     : Switch(true),  // enable_swap = false  
-    input_buffer(num_queues,1,1024, WorkerMapper(1)),
+    input_buffer(1024),
     process_buffer(512), output_buffer(512) { }
 
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
@@ -97,12 +97,8 @@ class FastSwitch : public Switch {
     //Parser *parser = this->get_parser("parser");
     //parser->parse(packet.get());
 
-#if LOCKFREE_QUEUE
-    //input_buffer.push_front(std::move(packet), flags==0);
-    input_buffer.push_front(packet_count_in%num_queues, 0);
-#else
-    input_buffer.push_front(std::move(packet));
-#endif
+    input_buffer.push_front(0, flags==0);
+    //input_buffer.push_front(packet_count_in%num_queues, 0);
     return 0;
   }
 
@@ -127,8 +123,8 @@ class FastSwitch : public Switch {
   void stats_thread();
 
  private:
-  //Queue<std::unique_ptr<Packet>> input_buffer;
-  bm::QueueingLogicLL<std::unique_ptr<Packet>,WorkerMapper> input_buffer;
+  Queue<std::unique_ptr<Packet>> input_buffer;
+  //bm::QueueingLogicLL<std::unique_ptr<Packet>,WorkerMapper> input_buffer;
   Queue<std::unique_ptr<Packet>> process_buffer;
   Queue<std::unique_ptr<Packet>> output_buffer;
   //bool swap_happened{false};
@@ -145,6 +141,8 @@ class FastSwitch : public Switch {
 
 void FastSwitch::stats_thread() {
   uint64_t old_packet_count=0;
+  uint64_t old_cons_not=0;
+  uint64_t old_prod_not=0;
 
   int period = 200;
   while(true) {
@@ -156,7 +154,12 @@ void FastSwitch::stats_thread() {
              <<"max latency: "<<0.000001*max_latency<<" ms"
              <<std::endl;
 
+    std::cout<<"prod_not: "<<input_buffer.prod_not-old_prod_not<<" not/s"<<" / "
+             <<"cons_not: "<<input_buffer.cons_not-old_cons_not<<" not/s"<<std::endl;
+
     old_packet_count=packet_count_in;
+    old_prod_not = input_buffer.prod_not;
+    old_cons_not = input_buffer.cons_not;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(period));
   }
@@ -192,8 +195,9 @@ void FastSwitch::ingress_thread() {
   //Pipeline *ingress_mau = this->get_pipeline("ingress");
   while (1) {
     std::unique_ptr<Packet> packet;
-    size_t port;
-    input_buffer.pop_back(0,&port,&packet);
+    //size_t port;
+    //input_buffer.pop_back(0,&port,&packet);
+    input_buffer.pop_back(&packet);
 
 #if 0
     for (auto& packet : packets) {

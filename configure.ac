@@ -150,7 +150,6 @@ AC_SUBST([AM_CPPFLAGS], ["$MY_CPPFLAGS \
 AC_SUBST([AM_CXXFLAGS], ["-Wall -Werror -Wextra  $FREEBSD_CXXFLAGS"])
 AC_SUBST([AM_CFLAGS], [""])
 
-
 # Checks for typedefs, structures, and compiler characteristics.
 # not supported by autoconf 2.68, add to m4/ ?
 # AC_CHECK_HEADER_STDBOOL

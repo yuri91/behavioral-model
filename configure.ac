@@ -85,8 +85,9 @@ case $host_os in
 esac
 AM_CONDITIONAL([COND_FREEBSD], [test "x$FREEBSD" == "xyes"])
 
-AC_PROG_CXX()
-AC_PROG_CC()
+# Checks for programs.
+AC_PROG_CXX
+AC_PROG_CC
 LT_INIT
 
 AC_CONFIG_MACRO_DIR([m4])
@@ -146,7 +147,7 @@ AC_SUBST([AM_CPPFLAGS], ["$MY_CPPFLAGS \
                           -isystem\$(top_srcdir)/third_party/jsoncpp/include \
                           -isystem\$(top_srcdir)/third_party/spdlog/include"])
 
-AC_SUBST([AM_CXXFLAGS], ["-Wall -Wextra -Werror  $FREEBSD_CXXFLAGS"])
+AC_SUBST([AM_CXXFLAGS], ["-Wall -Werror -Wextra  $FREEBSD_CXXFLAGS"])
 AC_SUBST([AM_CFLAGS], [""])
 
 

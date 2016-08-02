@@ -105,6 +105,14 @@ class SPSCQueue {
   bool push_front(const T& item, bool force = true) {
     return push_front_forward(item, force);
   }
+  //! Moves \p item to the front of the queue (producer). Non-blocking version
+  bool push_front_nb(T&& item, bool force = true) {
+    return push_front_forward_nb(std::move(item), force);
+  }
+  //! Copies \p item to the front of the queue (producer). Non-blocking version
+  bool push_front_nb(const T& item, bool force = true) {
+    return push_front_forward_nb(item, force);
+  }
   //! Pops an element from the back of the queue: moves the element to `*pItem`.
   // (consumer)
   bool pop_back(T* pItem) {
@@ -188,6 +196,20 @@ class SPSCQueue {
   template <typename U>
   bool push_front_forward(U &&item, bool force) {
     prod_wait_space(1);
+    // sure to have space
+    ring[normalize_index(prod_pi)] = std::forward<U>(item);
+    prod_advance(1, force);
+
+    return true;
+  }
+
+  //! Moves/Copy \p item to the front of the queue (producer)
+  // This new template parameter U is necessary so the std::forward<U>()
+  // used below can automatically deduce if item is an rvalue reference or
+  // a const reference. Non-blocking version
+  template <typename U>
+  bool push_front_forward_nb(U &&item, bool force) {
+    if (!prod_has_space(1)) return false;
     // sure to have space
     ring[normalize_index(prod_pi)] = std::forward<U>(item);
     prod_advance(1, force);

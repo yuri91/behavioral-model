@@ -76,7 +76,7 @@ if __name__ == "__main__":
     switch = sh("../targets/{0}/{0} {4}  -i 1@{1} -i 2@{2} {3}.json"
                 .format(args.target, intf1s, intf2s, args.program, extra_opts),
                 env=env,
-                stdout=None
+                stdout=None, stderr=None
                 )
     time.sleep(1)
 
@@ -91,7 +91,10 @@ if __name__ == "__main__":
     h2.send_signal(signal.SIGINT)
     time.sleep(.1)
     h1.terminate()
-    switch.terminate()
+    if switch.poll() != None:
+        print("switch CRASHED! "+str(switch.returncode))
+    else:
+        switch.terminate()
     s = h1.stderr.readlines()[-1].decode('utf-8').strip()
     h2.wait()
     switch.wait()

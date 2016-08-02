@@ -1,33 +1,33 @@
 diff --git a/Makefile.am b/Makefile.am
-	ok, minimal diff, add one freebsd directory
+	OK, minimal diff, add one freebsd directory
 diff --git a/README-freebsd.md b/README-freebsd.md
-	ok, new file, notes
+	OK, new file, notes
 diff --git a/configure.ac b/configure.ac
-	XXX put together FreeBSD blocks, check netmap option, checl CC/CLANG
-	XXX fix bash
-   + check fast_switch
+	OK, UPSTREAM (possibly with FreeBSD fixes)
+	XXX check fast_switch and netmap conditional
 diff --git a/freebsd/.gitignore b/freebsd/.gitignore
 	ok
 diff --git a/freebsd/Makefile.am b/freebsd/Makefile.am
-	new file, ok
+	OK new file
 diff --git a/freebsd/cxa_thread_atexit.cpp b/freebsd/cxa_thread_atexit.cpp
 	XXX ok, possibly check license
 diff --git a/include/bm/bm_sim/dev_mgr.h b/include/bm/bm_sim/dev_mgr.h
 	XXX check conditional compilation
 diff --git a/include/bm/bm_sim/learning.h b/include/bm/bm_sim/learning.h
-	XXX upstream initializer
+	OK UPSTREAM initializer
 diff --git a/include/bm/bm_sim/lockless_queueing.h b/include/bm/bm_sim/lockless_queueing.h
 	XXX test code, must be merged somewhere
 diff --git a/include/bm/bm_sim/options_parse.h b/include/bm/bm_sim/options_parse.h
 	XXX introduce netmap option, somewhere else ?
 diff --git a/include/bm/bm_sim/packet.h b/include/bm/bm_sim/packet.h
-	XXX upstream, export get_ingress_ts
+	OK UPSTREAM, export get_ingress_ts
 diff --git a/include/bm/bm_sim/packet_handler.h b/include/bm/bm_sim/packet_handler.h
 	XXX add parameter for batching
+	XXX see also dev_mgr_bmi.cpp and bmi_port.[ch]
 diff --git a/include/bm/bm_sim/port_monitor.h b/include/bm/bm_sim/port_monitor.h
-	XXX upstream, needed #include <functional>
+	OK upstream, needed #include <functional>
 diff --git a/include/bm/bm_sim/short_alloc.h b/include/bm/bm_sim/short_alloc.h
-	XXX todo, check __clang__
+	OK UPSTREAM  check __clang__
 diff --git a/include/bm/bm_sim/spsc_queue.h b/include/bm/bm_sim/spsc_queue.h
 	XXX our new queue, keep here
 diff --git a/include/bm/bm_sim/switch.h b/include/bm/bm_sim/switch.h
@@ -39,8 +39,6 @@ diff --git a/speed_tests/basic_switch.p4 b/speed_tests/basic_switch.p4
 	XXX used for tests, can be optional/removed
 diff --git a/speed_tests/basic_switch_commands.txt b/speed_tests/basic_switch_commands.txt
 	XXX test commands
-diff --git a/speed_tests/p4_mininet.py b/speed_tests/p4_mininet.py
-	XXX maybe we can remove
 diff --git a/speed_tests/simple_router.json b/speed_tests/simple_router.json
 	XXX copied for convenience, can be removed/moved into tests/
 diff --git a/speed_tests/simple_router.p4 b/speed_tests/simple_router.p4
@@ -49,31 +47,26 @@ diff --git a/speed_tests/simple_router_commands.txt b/speed_tests/simple_router_
 	XXX as above
 diff --git a/speed_tests/speed_test.py b/speed_tests/speed_test.py
 	XXX completely new, must be kept
-diff --git a/speed_tests/speed_test2.py b/speed_tests/speed_test2.py
-	XXX can be removed
-diff --git a/speed_tests/stress_test_ipv4.py b/speed_tests/stress_test_ipv4.py
-	XXX can be removed
 diff --git a/src/BMI/BMI/bmi_port.h b/src/BMI/BMI/bmi_port.h
 	XXX add argument to packet handler
 diff --git a/src/BMI/bmi_port.c b/src/BMI/bmi_port.c
 	XXX add argument to packet handler
-	XXX check if we can move the flag to the end
 diff --git a/src/Makefile.am b/src/Makefile.am
 	XXX add netmap
 diff --git a/src/bm_sim/Makefile.am b/src/bm_sim/Makefile.am
 	XXX add netmap
 diff --git a/src/bm_sim/dev_mgr_bmi.cpp b/src/bm_sim/dev_mgr_bmi.cpp
-	XXX additional argument
+	XXX UPSTREAM additional argument, we have a better fix
 diff --git a/src/bm_sim/dev_mgr_netmap.cpp b/src/bm_sim/dev_mgr_netmap.cpp
 	XXX new file, ok
 diff --git a/src/bm_sim/dev_mgr_packet_in.cpp b/src/bm_sim/dev_mgr_packet_in.cpp
 	XXX additional argument
 diff --git a/src/bm_sim/match_units.cpp b/src/bm_sim/match_units.cpp
-	XXX upstream, need cast
+	OK UPSTREAM, better cast
 diff --git a/src/bm_sim/options_parse.cpp b/src/bm_sim/options_parse.cpp
 	XXX maybe move into target
 diff --git a/src/bm_sim/pcap_file.cpp b/src/bm_sim/pcap_file.cpp
-	XXX additional argument, upstream
+	OK UPSTREAM additional argument
 	XXX test infinite packets, check
 diff --git a/src/bm_sim/switch.cpp b/src/bm_sim/switch.cpp
 	XXX additional argument to function
@@ -91,11 +84,11 @@ diff --git a/targets/Makefile.am b/targets/Makefile.am
 diff --git a/targets/fast_switch/.gitignore b/targets/fast_switch/.gitignore
 	XXX additional test target
 diff --git a/targets/fast_switch/Makefile.am b/targets/fast_switch/Makefile.am
-	XXX additional test target, copied from ...
+	XXX additional test target, copied from simple_router
 diff --git a/targets/fast_switch/commands.txt b/targets/fast_switch/commands.txt
-	XXX additional test target, copied from ...
+	XXX additional test target, copied from simple_router
 diff --git a/targets/fast_switch/fast_switch.cpp b/targets/fast_switch/fast_switch.cpp
-	XXX additional test target, copied from ...
+	XXX additional test target, copied and heavily modified
 diff --git a/targets/fast_switch/first_in.pcap b/targets/fast_switch/first_in.pcap
 	XXX test files, see what to do
 diff --git a/targets/fast_switch/first_out.pcap b/targets/fast_switch/first_out.pcap
@@ -130,7 +123,7 @@ diff --git a/targets/simple_switch/Makefile.am b/targets/simple_switch/Makefile.
 	XXX freebsd needs extra libraries (stdthreads e libnetmap.la)
 	XXX see if we can simplify targets makefiles
 diff --git a/targets/simple_switch/primitives.cpp b/targets/simple_switch/primitives.cpp
-	XXX missing include random, upstream
+	OK UPSTREAM missing include random
 diff --git a/targets/simple_switch/simple_switch.cpp b/targets/simple_switch/simple_switch.cpp
 	XXX extra argument
 diff --git a/targets/simple_switch/simple_switch.h b/targets/simple_switch/simple_switch.h
@@ -143,7 +136,3 @@ diff --git a/tests/stress_tests/stress_utils.h b/tests/stress_tests/stress_utils
 	XXX extra argument
 diff --git a/tests/stress_tests/test_queue_1.cpp b/tests/stress_tests/test_queue_1.cpp
 	XXX test code for our queue
-diff --git a/tools/get_version.sh b/tools/get_version.sh
-	XXX we actually need bash
-	In FreeBSD ports we do
-	devel/liblouisxml/Makefile:	@${REINPLACE_CMD} -e 's#/bin/bash#${LOCALBASE}/bin/bash#g' ${WRKSRC}/tools/${i}

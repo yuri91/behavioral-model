@@ -28,9 +28,11 @@ class NetmapInterface {
         exit(1);  // TODO(yuri): exception?
     }
   }
+
   ~NetmapInterface() {
     nm_close(d);
   }
+
   int fd() {
     return d->fd;
   }

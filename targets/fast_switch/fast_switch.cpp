@@ -85,60 +85,71 @@ using bm::Deparser;
 using bm::Pipeline;
 
 
+#define SINGLE_STAGE 0
+
+constexpr static int queue_size = 512;
 
 class FastSwitch : public Switch {
  public:
   FastSwitch()
     : Switch(true),  // enable_swap = false  
 #if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
-    input_buffer(1024),
-    process_buffer(1024),
-    output_buffer(1024)
+    input_buffer(queue_size),
+    process_buffer(queue_size),
+    output_buffer(queue_size)
 #elif QUEUE_TYPE == MULTI
-    input_buffer(num_queues,num_workers,1024,WorkerMapper(num_workers)),
-    process_buffer(num_queues,num_workers,1024,WorkerMapper(num_workers)),
-    output_buffer(num_queues,num_workers,1024,WorkerMapper(num_workers))
+    input_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers)),
+    process_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers)),
+    output_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers))
 #endif
   {}
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
-    //static int pkt_id = 0;
-
+#if SINGLE_STAGE
     (void)flags;
     (void)buffer;
     (void)len;
     (void)port_num;
+
+    q_elem_t packet = 0;
+#else
+    static int pkt_id = 0;
+
     //if (this->do_swap() == 0)  // a swap took place
     //  swap_happened = true;
 
-    //auto packet = new_packet_ptr(port_num, pkt_id++, len,
-    //                             bm::PacketBuffer(len+512, buffer, len));
+    auto packet = new_packet_ptr(port_num, pkt_id++, len,
+                                 bm::PacketBuffer(len+512, buffer, len));
 
-    q_elem_t packet = 0;
-    //BMELOG(packet_in, *packet);
+    BMELOG(packet_in, *packet);
 
-    packet_count_in++;
-    //Parser *parser = this->get_parser("parser");
-    //parser->parse(packet.get());
+    Parser *parser = this->get_parser("parser");
+    parser->parse(packet.get());
+#endif
 
 #if QUEUE_TYPE == LOCKING
+    (void) flags;
     input_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == SPSC
     input_buffer.push_front(std::move(packet), flags==0);
 #elif QUEUE_TYPE == MULTI
+    (void) flags;
     input_buffer.push_front(packet_count_in%num_queues, std::move(packet));
 #endif
+
+    packet_count_in++;
+
     return 0;
   }
 
   void start_and_return() {
     std::thread ti(&FastSwitch::ingress_thread, this);
     ti.detach();
-    //for (size_t i = 0; i < nb_egress_threads; i++) {
-    //  std::thread te(&FastSwitch::egress_thread, this, i);
-    //  te.detach();
-    //}
-    //std::thread tt(&FastSwitch::transmit_thread, this);
-    //tt.detach();
+    for (size_t i = 0; i < nb_egress_threads; i++) {
+      std::thread te(&FastSwitch::egress_thread, this, i);
+      te.detach();
+    }
+    std::thread tt(&FastSwitch::transmit_thread, this);
+    tt.detach();
     std::thread ts(&FastSwitch::stats_thread, this);
     ts.detach();
   }
@@ -244,7 +255,9 @@ void FastSwitch::transmit_thread() {
 }
 
 void FastSwitch::ingress_thread() {
-  //Pipeline *ingress_mau = this->get_pipeline("ingress");
+#if !SINGLE_STAGE
+  Pipeline *ingress_mau = this->get_pipeline("ingress");
+#endif
   while (1) {
     std::unique_ptr<Packet> packet;
 #if QUEUE_TYPE == LOCKING
@@ -255,21 +268,23 @@ void FastSwitch::ingress_thread() {
     size_t port;
     input_buffer.pop_back(0,&port,&packet);
 #endif
+
+#if SINGLE_STAGE
     packet_count_out++;
-
-#if 0
-    for (auto& packet : packets) {
-      continue;
-      int ingress_port = packet->get_ingress_port();
-      (void) ingress_port;
-      BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
-                      ingress_port);
+#else
+    int ingress_port = packet->get_ingress_port();
+    (void) ingress_port;
+    BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
+                    ingress_port);
 
 
-      ingress_mau->apply(packet.get());
+    ingress_mau->apply(packet.get());
 
-      process_buffer.push_front(std::move(packet));
-    }
+#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
+    process_buffer.push_front(std::move(packet));
+#elif QUEUE_TYPE == MULTI
+    process_buffer.push_front(0,std::move(packet));
+#endif
 #endif
   }
 }

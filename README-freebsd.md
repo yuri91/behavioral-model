@@ -46,3 +46,24 @@ symbols in the binary:
 The new bmv2 debugger can be enabled by passing `--enable-debugger` to
 `configure`.
 
+## Testing 
+
+simple test with pcap files:
+
+```
+	(
+	cd targets/fast_switch;
+	./fast_switch --use-files 0  -i 1@first -i 2@second \
+		simple_router.json --thrift-port 9999;
+	)
+```
+
+speed test for comparisons between different options (see `./speed_tests.py
+-h`):
+
+```
+	(
+	cd speed-tests;
+	sudo ./speed-test.py <options>;
+	)
+```

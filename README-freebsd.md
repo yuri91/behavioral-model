@@ -47,15 +47,16 @@ symbols in the binary:
 The new bmv2 debugger can be enabled by passing `--enable-debugger` to
 `configure`.
 
+To choose the queue type, in targets/fast_switch/fast_switch.cpp
+you can set queue_type
 ## Testing 
 
 simple test with pcap files:
 
 ```
-	(
-	cd targets/fast_switch;
+	( cd targets/fast_switch; \
 	./fast_switch --use-files 0  -i 1@first -i 2@second \
-		simple_router.json --thrift-port 9999;
+		simple_router.json --thrift-port 9999; \
 	)
 ```
 

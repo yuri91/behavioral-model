@@ -38,6 +38,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include <cstdio>
+
 #define LOCKFREE_QUEUE 1
 
 #if LOCKFREE_QUEUE
@@ -140,24 +142,27 @@ class FastSwitch : public Switch {
 };
 
 void FastSwitch::stats_thread() {
-  uint64_t old_packet_count=0;
+  uint64_t old_packet_count_in=0;
+  uint64_t old_packet_count_out=0;
   uint64_t old_prod_notified=0;
   uint64_t old_cons_notified=0;
 
   int period = 200;
   while(true) {
-    float delta_t = period*1000000.0/(packet_count_out-old_packet_count);
+    float delta_t_in = period*1000000.0/(packet_count_in-old_packet_count_in);
+    float delta_t_out = period*1000000.0/(packet_count_out-old_packet_count_out);
 
-    std::cout<<"cycle time: "<<delta_t<<" ns/pkt"<<" / "
-             <<"throughput:  "<<1000000000.0/delta_t<<" pkt/s"<<" / "
-             <<"avg latency: "<<(0.000001*avg_latency)/packet_count_out<<" ms"<<" / "
-             <<"max latency: "<<0.000001*max_latency<<" ms"
-             <<std::endl;
+    printf("-- IN  ns_pkt  %5.1f pkt_s %1.3e prod_notified %6.0f\n"
+           "   OUT ns_pkt  %5.1f pkt_s %1.3e cons_notified %6.0f\n"
+           ,//"       ms_avg_lat %1.3e ms_max_lat %1.3e\n",
+           delta_t_in, 1000000000.0/delta_t_in,
+           (input_buffer.queues[0]->prod_notified-old_prod_notified)*1000.0/period,
+           delta_t_out, 1000000000.0/delta_t_out,
+           (input_buffer.queues[0]->cons_notified-old_cons_notified)*1000.0/period
+        );//(0.000001*avg_latency)/packet_count_out, 0.000001*max_latency);
 
-    std::cout<<"cons_notified: "<<input_buffer.queues[0]->cons_notified-old_cons_notified<<" not/s"<<" / "
-             <<"prod_notified: "<<input_buffer.queues[0]->prod_notified-old_prod_notified<<" not/s"<<std::endl;
-
-    old_packet_count=packet_count_out;
+    old_packet_count_in=packet_count_in;
+    old_packet_count_out=packet_count_out;
     old_cons_notified = input_buffer.queues[0]->cons_notified;
     old_prod_notified = input_buffer.queues[0]->prod_notified;
 

@@ -64,7 +64,8 @@ class QueueingLogicLL {
   void pop_back(size_t worker_id, size_t *queue_id, T *pItem) {
     while(true) {
       WorkerInfo& worker = workers[worker_id];
-      size_t n = worker.queues.size();
+      //size_t n = worker.queues.size();
+      constexpr size_t n = 1;
       for (size_t i = 0; i < n; i++) {
         size_t q = worker.next_queue();
         if (queues[q]->pop_back_nb(pItem)) {

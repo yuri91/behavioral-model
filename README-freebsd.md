@@ -33,7 +33,7 @@ edit `tools/get-version.sh` and change `#!/bin/bash` with
 ## Building the code
 
     1. ./autogen.sh
-    2. ./configure 'CXXFLAGS=-I/usr/local/include' 'CFLAGS=-I/usr/local/include' 'LDFLAGS=-L/usr/local/lib' 'CC=clang' 'CXX=clang++'
+    2. ./configure --disable-logging-macros --disable-elogger 'CXXFLAGS=-I/usr/local/include -O3' 'CFLAGS=-I/usr/local/include -O3' 'LDFLAGS=-L/usr/local/lib' 'CC=clang' 'CXX=clang++'
     3. make
 
 Debug logging is enabled by default. If you want to disable it for performance

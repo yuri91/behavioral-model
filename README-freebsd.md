@@ -27,7 +27,8 @@ To use the CLI, you will need to install the
 
 ## Temporary workaround
 
-edit `tools/get-version.sh` and change `#!/bin/bash` with `#!/usr/local/bin/bas`
+edit `tools/get-version.sh` and change `#!/bin/bash` with
+`#!/usr/local/bin/bash`
 
 ## Building the code
 

@@ -229,7 +229,7 @@ class SPSCQueue {
 
     if (index_t(cons_ci - pe - 1) < index_t(cons_ci - old)) {
       prod_sem_ptr->signal();
-      cons_not++;
+      prod_notified++;
     }
   }
 
@@ -272,7 +272,7 @@ class SPSCQueue {
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
       cons_sem_ptr->signal();
-      prod_not++;
+      cons_notified++;
     }
   }
 
@@ -325,9 +325,9 @@ private:
 
  public:
   alignas(64)
-  uint64_t cons_not{0};
+  uint64_t prod_notified{0};
   alignas(64)
-  uint64_t prod_not{0};
+  uint64_t cons_notified{0};
 };
 
 } // namespace bm

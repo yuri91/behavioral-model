@@ -97,8 +97,6 @@ class SimpleSwitch : public Switch {
 
 void SimpleSwitch::stats_thread() {
   uint64_t old_packet_count=0;
-  uint64_t old_prod = 0;
-  uint64_t old_cons=0;
   int period = 200;
   while(true) {
     float delta_t = period*1000000.0/(packet_count_in-old_packet_count);
@@ -109,12 +107,6 @@ void SimpleSwitch::stats_thread() {
              <<"max latency: "<<0.000001*max_latency<<" ms"
              <<std::endl;
 
-    float delta_p = packet_count_in-old_packet_count;
-    std::cout<<"notifications:  "<<(input_buffer.prod_not-old_prod)/delta_p
-             <<" -> "<<(input_buffer.cons_not-old_cons)/delta_p<<std::endl;
-    
-    old_prod=input_buffer.prod_not;
-    old_cons=input_buffer.cons_not;
     old_packet_count=packet_count_in;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(period));

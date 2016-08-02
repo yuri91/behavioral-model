@@ -141,8 +141,8 @@ class FastSwitch : public Switch {
 
 void FastSwitch::stats_thread() {
   uint64_t old_packet_count=0;
-  uint64_t old_cons_not=0;
-  uint64_t old_prod_not=0;
+  uint64_t old_prod_notified=0;
+  uint64_t old_cons_notified=0;
 
   int period = 200;
   while(true) {
@@ -154,12 +154,12 @@ void FastSwitch::stats_thread() {
              <<"max latency: "<<0.000001*max_latency<<" ms"
              <<std::endl;
 
-    std::cout<<"prod_not: "<<input_buffer.prod_not-old_prod_not<<" not/s"<<" / "
-             <<"cons_not: "<<input_buffer.cons_not-old_cons_not<<" not/s"<<std::endl;
+    std::cout<<"cons_notified: "<<input_buffer.cons_notified-old_cons_notified<<" not/s"<<" / "
+             <<"prod_notified: "<<input_buffer.prod_notified-old_prod_notified<<" not/s"<<std::endl;
 
     old_packet_count=packet_count_in;
-    old_prod_not = input_buffer.prod_not;
-    old_cons_not = input_buffer.cons_not;
+    old_cons_notified = input_buffer.cons_notified;
+    old_prod_notified = input_buffer.prod_notified;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(period));
   }

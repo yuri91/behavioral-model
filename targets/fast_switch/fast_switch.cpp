@@ -146,7 +146,7 @@ void FastSwitch::stats_thread() {
 
   int period = 200;
   while(true) {
-    float delta_t = period*1000000.0/(packet_count_in-old_packet_count);
+    float delta_t = period*1000000.0/(packet_count_out-old_packet_count);
 
     std::cout<<"cycle time: "<<delta_t<<" ns/pkt"<<" / "
              <<"throughput:  "<<1000000000.0/delta_t<<" pkt/s"<<" / "
@@ -157,7 +157,7 @@ void FastSwitch::stats_thread() {
     std::cout<<"cons_notified: "<<input_buffer.queues[0]->cons_notified-old_cons_notified<<" not/s"<<" / "
              <<"prod_notified: "<<input_buffer.queues[0]->prod_notified-old_prod_notified<<" not/s"<<std::endl;
 
-    old_packet_count=packet_count_in;
+    old_packet_count=packet_count_out;
     old_cons_notified = input_buffer.queues[0]->cons_notified;
     old_prod_notified = input_buffer.queues[0]->prod_notified;
 
@@ -197,6 +197,7 @@ void FastSwitch::ingress_thread() {
     std::unique_ptr<Packet> packet;
     size_t port;
     input_buffer.pop_back(0,&port,&packet);
+    packet_count_out++;
     //input_buffer.pop_back(&packet);
 
 #if 0

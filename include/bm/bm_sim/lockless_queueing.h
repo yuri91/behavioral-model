@@ -53,12 +53,12 @@ class QueueingLogicLL {
   //! Makes a copy of \p item and pushes it to the front of the logical queue
   //! with id \p queue_id.
   void push_front(size_t queue_id, const T &item) {
-    queues[queue_id]->push_front(item);
+    queues.at(queue_id)->push_front_nb(item);
   }
 
   //! Moves \p item to the front of the logical queue with id \p queue_id.
   void push_front(size_t queue_id, T &&item) {
-    queues[queue_id]->push_front(std::move(item));
+    queues.at(queue_id)->push_front_nb(std::move(item));
   }
 
   void pop_back(size_t worker_id, size_t *queue_id, T *pItem) {

@@ -138,6 +138,7 @@ class QueueingLogicLL {
   size_t nb_queues;
   size_t nb_workers;
   FMap map_to_worker;
+ public:
   std::vector<std::unique_ptr<SPSCQueue<T>>> queues;
   std::vector<WorkerInfo> workers;
 };

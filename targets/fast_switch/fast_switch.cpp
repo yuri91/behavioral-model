@@ -96,7 +96,7 @@ using bm::Pipeline;
 
 #define SINGLE_STAGE 0
 
-constexpr static int queue_size = 1024;
+constexpr static int queue_size = 512;
 
 class FastSwitch : public Switch {
  public:
@@ -237,28 +237,30 @@ void FastSwitch::stats_thread() {
 void FastSwitch::transmit_thread() {
   Deparser *deparser = this->get_deparser("deparser");
   while (1) {
-    std::unique_ptr<Packet> packet;
+    std::vector<q_elem_t> packets;
 #if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
-    output_buffer.pop_back(&packet);
+    output_buffer.pop_back(&packets);
 #elif QUEUE_TYPE == MULTI
     size_t port;
     output_buffer.pop_back(0, &port, &packet);
 #endif
-    deparser->deparse(packet.get());
-    BMELOG(packet_out, *packet);
-    BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
-                    packet->get_data_size(), packet->get_egress_port());
-    auto ingress_ts = packet->get_ingress_ts();
-    std::chrono::nanoseconds delta = std::chrono::system_clock::now() - ingress_ts;
-    if (uint64_t(delta.count()) > max_latency) max_latency = delta.count();
-    avg_latency+= delta.count();
-    packet_count_out++;
+    for (auto& packet: packets) {
+      deparser->deparse(packet.get());
+      BMELOG(packet_out, *packet);
+      BMLOG_DEBUG_PKT(*packet, "Transmitting packet of size {} out of port {}",
+                      packet->get_data_size(), packet->get_egress_port());
+      auto ingress_ts = packet->get_ingress_ts();
+      std::chrono::nanoseconds delta = std::chrono::system_clock::now() - ingress_ts;
+      if (uint64_t(delta.count()) > max_latency) max_latency = delta.count();
+      avg_latency+= delta.count();
+      packet_count_out++;
 
-    int egress_port = packet->get_egress_port();
-    if (egress_port == 511) {
-      BMLOG_DEBUG_PKT(*packet, "Dropping packet");
-    } else {
-      transmit_fn(egress_port, packet->data(), packet->get_data_size());
+      int egress_port = packet->get_egress_port();
+      if (egress_port == 511) {
+        BMLOG_DEBUG_PKT(*packet, "Dropping packet");
+      } else {
+        transmit_fn(egress_port, packet->data(), packet->get_data_size());
+      }
     }
   }
 }
@@ -268,32 +270,34 @@ void FastSwitch::ingress_thread() {
   Pipeline *ingress_mau = this->get_pipeline("ingress");
 #endif
   while (1) {
-    std::unique_ptr<Packet> packet;
+    std::vector<q_elem_t> packets;
 #if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
-    input_buffer.pop_back(&packet);
+    input_buffer.pop_back(&packets);
 #elif QUEUE_TYPE == MULTI
     size_t port;
     input_buffer.pop_back(0, &port, &packet);
 #endif
+    for (auto& packet: packets) {
 
 #if SINGLE_STAGE
-    packet_count_out++;
+      packet_count_out++;
 #else
-    int ingress_port = packet->get_ingress_port();
-    (void) ingress_port;
-    BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
-                    ingress_port);
+      int ingress_port = packet->get_ingress_port();
+      (void) ingress_port;
+      BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
+                      ingress_port);
 
-    ingress_mau->apply(packet.get());
+      ingress_mau->apply(packet.get());
 
 #if QUEUE_TYPE == LOCKING
-    process_buffer.push_front(std::move(packet));
+      process_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == SPSC
-    process_buffer.push_front(std::move(packet));
+      process_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == MULTI
-    process_buffer.push_front(0,std::move(packet));
+      process_buffer.push_front(0,std::move(packet));
 #endif
 #endif
+    }
   }
 }
 
@@ -304,26 +308,28 @@ void FastSwitch::egress_thread(size_t i) {
   PHV *phv;
 
   while (1) {
-    q_elem_t packet;
+    std::vector<q_elem_t> packets;
 #if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
-    process_buffer.pop_back(&packet);
+    process_buffer.pop_back(&packets);
 #elif QUEUE_TYPE == MULTI
     size_t port;
     process_buffer.pop_back(i, &port, &packet);
 #endif
-    phv = packet->get_phv();
-    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
-    BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
+    for (auto& packet: packets) {
+      phv = packet->get_phv();
+      int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
+      BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
-    packet->set_egress_port(egress_port);
-    egress_mau->apply(packet.get());
+      packet->set_egress_port(egress_port);
+      egress_mau->apply(packet.get());
 #if QUEUE_TYPE == LOCKING
-    output_buffer.push_front(std::move(packet));
+      output_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == SPSC
-    output_buffer.push_front(std::move(packet));
+      output_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == MULTI
-    output_buffer.push_front(0, std::move(packet));
+      output_buffer.push_front(0, std::move(packet));
 #endif
+    }
   }
 }
 

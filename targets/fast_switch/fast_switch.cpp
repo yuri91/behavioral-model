@@ -49,7 +49,7 @@ using q_elem_t = std::unique_ptr<bm::Packet>;
 #define SPSC 2		/* single producer, single consumer lockless queue */
 #define MULTI 3		/* multiple queues, single producer multiple consumers */
 
-#define QUEUE_TYPE MULTI
+#define QUEUE_TYPE SPSC
 
 
 #if QUEUE_TYPE == LOCKING
@@ -96,7 +96,7 @@ using bm::Pipeline;
 
 #define SINGLE_STAGE 0
 
-constexpr static int queue_size = 512;
+constexpr static int queue_size = 1024;
 
 class FastSwitch : public Switch {
  public:
@@ -140,7 +140,8 @@ class FastSwitch : public Switch {
     (void) flags;
     input_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == SPSC
-    input_buffer.push_front(std::move(packet), flags==0);
+    (void) flags;
+    input_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == MULTI
     (void) flags;
     input_buffer.push_front(packet_count_in%num_queues, std::move(packet));
@@ -285,7 +286,9 @@ void FastSwitch::ingress_thread() {
 
     ingress_mau->apply(packet.get());
 
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
+#if QUEUE_TYPE == LOCKING
+    process_buffer.push_front(std::move(packet));
+#elif QUEUE_TYPE == SPSC
     process_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == MULTI
     process_buffer.push_front(0,std::move(packet));
@@ -314,7 +317,9 @@ void FastSwitch::egress_thread(size_t i) {
 
     packet->set_egress_port(egress_port);
     egress_mau->apply(packet.get());
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
+#if QUEUE_TYPE == LOCKING
+    output_buffer.push_front(std::move(packet));
+#elif QUEUE_TYPE == SPSC
     output_buffer.push_front(std::move(packet));
 #elif QUEUE_TYPE == MULTI
     output_buffer.push_front(0, std::move(packet));

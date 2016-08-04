@@ -181,16 +181,6 @@ class SPSCQueue {
     return false;
   }
 
-  // How many items are in the queue. But it makes no sense without
-  // indicating which side is requesting the information, because both
-  // consumer and producer may move their pointers without notifying
-  // the other side.
-  // XXX remove this and check how clients break.
-  // NOTE: this is an approximation of the real size
-  //size_t size() {
-  //  return __prod_index - __cons_index;
-  //}
-
   // copy and move constructors and assignment are not supported:
   //! Deleted copy constructor
   SPSCQueue(const SPSCQueue &) = delete;

@@ -99,11 +99,6 @@ class QueueingLogicLL {
     }
   }
 
-  //! Get the occupancy of the logical queue with id \p queue_id.
-  //size_t size(size_t queue_id) const {
-  //  return queues.at(queue_id).size();
-  //}
-
   //! Deleted copy constructor
   QueueingLogicLL(const QueueingLogicLL &) = delete;
   //! Deleted copy assignment operator

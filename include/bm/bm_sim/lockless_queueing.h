@@ -2,6 +2,8 @@
 #define BM_BM_SIM_LOCKLESS_QUEUEING_H_
 
 #include <bm/bm_sim/spsc_queue.h>
+#include <bm/bm_sim/binary_semaphore.h>
+
 #include <deque>
 #include <queue>
 #include <vector>
@@ -113,12 +115,12 @@ class QueueingLogicLL {
   //! Utility struct to keep track of the last checked queue. Needed to avoid 
   //  starvation (by doing a round robin schedule)
   struct WorkerInfo {
-    std::shared_ptr<Semaphore> sem;
+    std::shared_ptr<BinarySemaphore> sem;
     std::vector<size_t> queues;
     size_t cur_idx;
 
     WorkerInfo() {
-      sem = std::make_shared<Semaphore>();
+      sem = std::make_shared<BinarySemaphore>();
       cur_idx = -1;
     }
 

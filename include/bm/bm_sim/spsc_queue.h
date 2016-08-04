@@ -23,12 +23,12 @@
 #ifndef BM_BM_SIM_SPSC_QUEUE_H_
 #define BM_BM_SIM_SPSC_QUEUE_H_
 
+#include <bm/bm_sim/binary_semaphore.h>
+
 #include <memory>
 #include <string>
 #include <iostream>
 #include <atomic>
-#include <mutex>
-#include <condition_variable>
 #include <chrono>
 #include <thread>
 #include <queue>
@@ -36,34 +36,7 @@
 #include <cmath>
 #include <cassert>
 
-namespace {
-constexpr int cons_sleep_time{1}; // microseconds
-}
-
-
 namespace bm{
-
-//! XXX A utility class implementing a binary semaphore to synchronize
-//! producer and consumer on the queue.
-class Semaphore {
- public:
-  Semaphore():flag(false){}
-  void wait() {
-    std::unique_lock<std::mutex> lock(mutex);
-    condition.wait(lock, [this](){ return flag; });
-    flag = false;
-  }
-  void signal() {
-    std::unique_lock<std::mutex> lock(mutex);
-    flag = true;
-    condition.notify_one();
-  }
- private:
-  mutable std::mutex mutex;
-  mutable std::condition_variable condition;
-  bool flag;
-};
-
 
 /*
  * This class implements a Single-producer Single-consumer lockless queue.
@@ -99,18 +72,18 @@ class SPSCQueue {
    * to the constructor.
    */
   SPSCQueue(size_t max_capacity = 1024, 
-            std::shared_ptr<Semaphore> cs=nullptr,
-            std::shared_ptr<Semaphore> ps=nullptr)
+            std::shared_ptr<BinarySemaphore> cs=nullptr,
+            std::shared_ptr<BinarySemaphore> ps=nullptr)
     : ring_capacity(1ul<<uint64_t(ceil(log2(max_capacity)))),
       queue_capacity(max_capacity),
       ring(new T[ring_capacity]),
       cons_sem_ptr(cs),prod_sem_ptr(ps) {
     assert(ring_capacity <= max_size);
     if (cons_sem_ptr.get()==nullptr) {
-      cons_sem_ptr = std::make_shared<Semaphore>();
+      cons_sem_ptr = std::make_shared<BinarySemaphore>();
     }
     if (prod_sem_ptr.get()==nullptr) {
-      prod_sem_ptr = std::make_shared<Semaphore>();
+      prod_sem_ptr = std::make_shared<BinarySemaphore>();
     }
   }
 
@@ -322,13 +295,15 @@ class SPSCQueue {
   }
 
 private:
+  static constexpr int cons_sleep_time{1}; // microseconds
+
   alignas(64)
   const size_t ring_capacity;
   const size_t queue_capacity;
   const std::unique_ptr<T[]> ring;
   alignas(64)
-  std::shared_ptr<Semaphore> cons_sem_ptr;
-  std::shared_ptr<Semaphore> prod_sem_ptr;
+  std::shared_ptr<BinarySemaphore> cons_sem_ptr;
+  std::shared_ptr<BinarySemaphore> prod_sem_ptr;
 
   alignas(64)
   atomic_index_t __prod_index{0}; // index of the next element to produce

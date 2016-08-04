@@ -87,7 +87,11 @@ if __name__ == "__main__":
     h2 = sh("pkt-gen -i {} -f rx".format(intf2c))
 
 
-    time.sleep(10)
+    try:
+        time.sleep(10)
+    except KeyboardInterrupt:
+        pass
+
     h2.send_signal(signal.SIGINT)
     time.sleep(.1)
     h1.terminate()

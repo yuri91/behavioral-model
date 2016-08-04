@@ -1,5 +1,4 @@
-
-/* Copyright 2013-present Barefoot Networks, Inc.
+/* Copyright 2016-present Universita` di Pisa
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +14,11 @@
  */
 
 /*
- * Yuri Iozzelli (y/iozzelli@gmail.com)
+ * Yuri Iozzelli (y.iozzelli@gmail.com)
  *
  */
 
-//! @file queue.h
+//! @file spsc_queue.h
 
 #ifndef BM_BM_SIM_SPSC_QUEUE_H_
 #define BM_BM_SIM_SPSC_QUEUE_H_
@@ -44,6 +43,8 @@ constexpr int cons_sleep_time{1}; // microseconds
 
 namespace bm{
 
+//! XXX A utility class implementing a binary semaphore to synchronize
+//! producer and consumer on the queue.
 class Semaphore {
  public:
   Semaphore():flag(false){}
@@ -66,21 +67,37 @@ class Semaphore {
 
 /*
  * This class implements a Single-producer Single-consumer lockless queue.
- * It uses atomic variables for the shared indexes between consumer and producer
+ * Support for batch insertions is through the 'force' argument which,
+ * when set, exports the new queue index to the consumer.
+ * XXX we also export the info if the queue becomes full
+ * Removal can be of a single packet, or of an array.
+ *
+ * Indexes span the entire index_t range, so actual accesses need
+ * to use normalize_index() to reduce to ring_capacity (the physical
+ * number of entries). The logical size queue_capacity can be
+ * arbitrary, ring_capacity is the next power of 2 >= queue_capacity.
+ *
+ * The class uses atomic variables for the shared indexes between consumer and producer
  * threads. In order to avoid unnecessary notifications on the semaphores, both
  * the producer and the consumer set an event index corresponding to the point
  * in the queue at which the other thread issues a notification.
  * The consumer sets the event at the next producer index, while the producer
  * can set a point further on in the ring.
- *
  */
 template <class T>
 class SPSCQueue {
  public:
-  using index_t = uint64_t;
+  using index_t = uint64_t; // XXX could be uint32_t
   using atomic_index_t = std::atomic<index_t>;
   static constexpr size_t max_size = 1ul<<(sizeof(index_t)*8-1);
 
+  /*
+   * Multiple queues can share the same semaphore for synchronisation.
+   * By default, the consumer and producer semaphores (cs, ps) are
+   * null and the class creates private objects.
+   * Shared semaphores, if needed, should be passed as arguments
+   * to the constructor.
+   */
   SPSCQueue(size_t max_capacity = 1024, 
             std::shared_ptr<Semaphore> cs=nullptr,
             std::shared_ptr<Semaphore> ps=nullptr)
@@ -96,6 +113,9 @@ class SPSCQueue {
       prod_sem_ptr = std::make_shared<Semaphore>();
     }
   }
+
+  // Blocking and non-blocking versions of insert functions,
+  // only for one item at a time.
 
   //! Moves \p item to the front of the queue (producer)
   bool push_front(T&& item, bool force = true) {
@@ -113,6 +133,10 @@ class SPSCQueue {
   bool push_front_nb(const T& item, bool force = true) {
     return push_front_forward_nb(item, force);
   }
+
+  // Blocking and non blocking versions of remove functions,
+  // for one or a vector of items.
+
   //! Pops an element from the back of the queue: moves the element to `*pItem`.
   // (consumer)
   bool pop_back(T* pItem) {
@@ -145,6 +169,7 @@ class SPSCQueue {
     return true;
   }
 
+  // XXX should it become private ?
   //! Used by the consumer to wait for 'want' elements.
   //  Returns number of available elements
   index_t cons_wait_data(index_t want) {
@@ -161,6 +186,7 @@ class SPSCQueue {
     return cons_pi - cons_ci;
   }
 
+  // XXX should it become private ?
   //  Used by the consumer to set the cons_event.
   //  Returns true if `wait` elements available, false otherwise
   bool cons_set_event(index_t want) {
@@ -173,11 +199,17 @@ class SPSCQueue {
     return false;
   }
 
+  // How many items are in the queue. But it makes no sense without
+  // indicating which side is requesting the information, because both
+  // consumer and producer may move their pointers without notifying
+  // the other side.
+  // XXX remove this and check how clients break.
   // NOTE: this is an approximation of the real size
   size_t size() {
     return __prod_index - __cons_index;
   }
 
+  // copy and move constructors and assignment are not supported:
   //! Deleted copy constructor
   SPSCQueue(const SPSCQueue &) = delete;
   //! Deleted copy assignment operator
@@ -266,7 +298,6 @@ class SPSCQueue {
   void prod_notify() {
     index_t old = __prod_index;
     __prod_index = prod_pi;
-
 
     index_t ce = cons_event;
 

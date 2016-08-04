@@ -13,13 +13,17 @@
 namespace bm {
 
 //! One of the most basic queueing block possible. Lets you choose (at runtime)
-//! the desired number of logical queues and the number of worker threads that
-//! will be reading from these queues. I write "logical queues" because the
-//! implementation actually uses as many physical queues as there are worker
-//! threads. However, each logical queue still has its own maximum capacity.
+//! the desired number of queues and the number of worker threads that
+//! will be reading from these queues. //!
+//!
+//! It is similar to the QueueingLogic class, but uses SPSCQueue internally.
+//! For this reason, at most one producer thread can push on a single queue,
+//! while different producers can push to different queues.
+//! The consumer threads must respect the mapping provided by `map_to_worker` 
+//! (see below).
+//!
 //! As of now, the behavior is blocking for both read (pop_back()) and write
-//! (push_front()), but we may offer additional options if there is interest
-//! expressed in the future.
+//! (push_front()).
 //!
 //! Template parameter `T` is the type (has to be movable) of the objects that
 //! will be stored in the queues. Template parameter `FMap` is a callable object
@@ -84,7 +88,7 @@ class QueueingLogicLL {
       }
       for (size_t i = 0; i < n; i++) {
         size_t q = worker.next_queue();
-        if (queues[q]->cons_set_event(1)) {
+        if (queues[q]->set_cons_event(1)) {
           queues[q]->pop_back_nb(pItem);
           *queue_id = q;
           worker.next_queue();
@@ -96,9 +100,9 @@ class QueueingLogicLL {
   }
 
   //! Get the occupancy of the logical queue with id \p queue_id.
-  size_t size(size_t queue_id) const {
-    return queues.at(queue_id).size();
-  }
+  //size_t size(size_t queue_id) const {
+  //  return queues.at(queue_id).size();
+  //}
 
   //! Deleted copy constructor
   QueueingLogicLL(const QueueingLogicLL &) = delete;
@@ -111,6 +115,8 @@ class QueueingLogicLL {
   QueueingLogicLL &&operator =(QueueingLogicLL &&) = delete;
 
 
+  //! Utility struct to keep track of the last checked queue. Needed to avoid 
+  //  starvation (by doing a round robin schedule)
   struct WorkerInfo {
     std::shared_ptr<Semaphore> sem;
     std::vector<size_t> queues;

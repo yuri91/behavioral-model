@@ -169,31 +169,13 @@ class SPSCQueue {
     return true;
   }
 
-  // XXX should it become private ?
-  //! Used by the consumer to wait for 'want' elements.
-  //  Returns number of available elements
-  index_t cons_wait_data(index_t want) {
-    while (true) {
-      if (cons_has_data(want)) break;
-      // sleep a while and retry
-      std::this_thread::sleep_for(std::chrono::microseconds(cons_sleep_time));
-      if (cons_has_data(want)) break;
-
-      if (cons_set_event(want)) break;
-
-      cons_sem_ptr->wait(); // wait for notification
-    }
-    return cons_pi - cons_ci;
-  }
-
-  // XXX should it become private ?
   //  Used by the consumer to set the cons_event.
   //  Returns true if `wait` elements available, false otherwise
-  bool cons_set_event(index_t want) {
+  bool set_cons_event(index_t want) {
     //request wake up when prod_index > cons_event
     cons_event = cons_ci + want - 1;
     cons_notify();
-    if (cons_has_data(want)) { //double check
+    if (cons_has_data(want)) {
       return true;
     }
     return false;
@@ -205,9 +187,9 @@ class SPSCQueue {
   // the other side.
   // XXX remove this and check how clients break.
   // NOTE: this is an approximation of the real size
-  size_t size() {
-    return __prod_index - __cons_index;
-  }
+  //size_t size() {
+  //  return __prod_index - __cons_index;
+  //}
 
   // copy and move constructors and assignment are not supported:
   //! Deleted copy constructor
@@ -249,6 +231,22 @@ class SPSCQueue {
     return true;
   }
 
+
+  //! Used by the consumer to wait for 'want' elements.
+  //  Returns number of available elements
+  index_t cons_wait_data(index_t want) {
+    while (true) {
+      if (cons_has_data(want)) break;
+      // sleep a while and retry
+      std::this_thread::sleep_for(std::chrono::microseconds(cons_sleep_time));
+      if (cons_has_data(want)) break;
+
+      if (set_cons_event(want)) break;
+
+      cons_sem_ptr->wait(); // wait for notification
+    }
+    return cons_pi - cons_ci;
+  }
 
   // used by consumer to update shared consumer index and signal the producer
   // if producer event is reached

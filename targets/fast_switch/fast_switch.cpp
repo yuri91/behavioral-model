@@ -40,34 +40,11 @@
 
 #include <cstdio>
 
-using q_elem_t = std::unique_ptr<bm::Packet>;
-
-/*
- * We can test different queue types by setting QUEUE_TYPE accordingly.
- */
-#define LOCKING 1	/* original mutex-based queue */
-#define SPSC 2		/* single producer, single consumer lockless queue */
-#define MULTI 3		/* multiple queues, single producer multiple consumers */
-
-#define QUEUE_TYPE SPSC
-
-
-#if QUEUE_TYPE == LOCKING
-
-#include <bm/bm_sim/queue.h>
-using Queue = bm::Queue<q_elem_t>;
-
-#elif QUEUE_TYPE == SPSC
-
-#include <bm/bm_sim/spsc_queue.h>
-using Queue = bm::SPSCQueue<q_elem_t>;
-
-#elif QUEUE_TYPE == MULTI
-
 #include <bm/bm_sim/lockless_queueing.h>
+#include <bm/bm_sim/queueing.h>
+#include <bm/bm_sim/spsc_queue.h>
 #define num_queues 1
 #define num_workers 1
-
 struct WorkerMapper {
   WorkerMapper(size_t nb_workers)
       : nb_workers(nb_workers) { }
@@ -78,13 +55,12 @@ struct WorkerMapper {
 
   size_t nb_workers;
 };
-using Queue = bm::QueueingLogicLL<q_elem_t, WorkerMapper>;
 
-#else
+using q_elem_t = std::unique_ptr<bm::Packet>;
 
-#error --- QUEUE_TYPE must be defined ---
-
-#endif
+using Queue = bm::SPSCQueue<q_elem_t>;
+using QueueingLogic = bm::QueueingLogicLLRL<q_elem_t, WorkerMapper>;
+//using QueueingLogic = bm::QueueingLogicRL<q_elem_t, WorkerMapper>;
 
 using bm::Switch;
 using bm::Packet;
@@ -94,34 +70,20 @@ using bm::Deparser;
 using bm::Pipeline;
 
 
-#define SINGLE_STAGE 0
-
 constexpr static int queue_size = 512;
 
 class FastSwitch : public Switch {
  public:
-  FastSwitch()
+  FastSwitch(uint64_t rate)
     : Switch(true),  // enable_swap = false  
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
     input_buffer(queue_size),
-    process_buffer(queue_size),
-    output_buffer(queue_size)
-#elif QUEUE_TYPE == MULTI
-    input_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers)),
     process_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers)),
-    output_buffer(num_queues,num_workers,queue_size,WorkerMapper(num_workers))
-#endif
-  {}
+    output_buffer(queue_size)
+  {
+    process_buffer.set_rate(0,rate);
+  }
 
   int receive(int port_num, const char *buffer, int len, uint64_t flags) {
-#if SINGLE_STAGE
-    (void)flags;
-    (void)buffer;
-    (void)len;
-    (void)port_num;
-
-    q_elem_t packet = 0;
-#else
     static int pkt_id = 0;
 
     //if (this->do_swap() == 0)  // a swap took place
@@ -134,18 +96,9 @@ class FastSwitch : public Switch {
 
     Parser *parser = this->get_parser("parser");
     parser->parse(packet.get());
-#endif
 
-#if QUEUE_TYPE == LOCKING
     (void) flags;
     input_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == SPSC
-    (void) flags;
-    input_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == MULTI
-    (void) flags;
-    input_buffer.push_front(packet_count_in%num_queues, std::move(packet));
-#endif
 
     packet_count_in++;
 
@@ -153,6 +106,7 @@ class FastSwitch : public Switch {
   }
 
   void start_and_return() {
+
     std::thread ti(&FastSwitch::ingress_thread, this);
     ti.detach();
     for (size_t i = 0; i < nb_egress_threads; i++) {
@@ -174,7 +128,7 @@ class FastSwitch : public Switch {
 
  private:
   Queue input_buffer;
-  Queue process_buffer;
+  QueueingLogic process_buffer;
   Queue output_buffer;
   //bool swap_happened{false};
 
@@ -200,16 +154,8 @@ void FastSwitch::stats_thread() {
     float delta_t_in = period*1000000.0/(packet_count_in-old_packet_count_in);
     float delta_t_out = period*1000000.0/(packet_count_out-old_packet_count_out);
 
-#if QUEUE_TYPE == LOCKING
-    float prod_notified = 0;
-    float cons_notified = 0;
-#elif QUEUE_TYPE == SPSC
     float prod_notified = input_buffer.prod_notified;
     float cons_notified = input_buffer.cons_notified;
-#elif QUEUE_TYPE == MULTI
-    float prod_notified = input_buffer.queues[0]->prod_notified;
-    float cons_notified = input_buffer.queues[0]->cons_notified;
-#endif
 
     printf("-- IN  ns_pkt  %5.1f pkt_s %1.3e prod_notified %6.0f\n"
            "   OUT ns_pkt  %5.1f pkt_s %1.3e cons_notified %6.0f\n"
@@ -222,13 +168,8 @@ void FastSwitch::stats_thread() {
 
     old_packet_count_in=packet_count_in;
     old_packet_count_out=packet_count_out;
-#if QUEUE_TYPE == SPSC
     old_prod_notified = input_buffer.prod_notified;
     old_cons_notified = input_buffer.cons_notified;
-#elif QUEUE_TYPE == MULTI
-    old_prod_notified = input_buffer.queues[0]->prod_notified;
-    old_cons_notified = input_buffer.queues[0]->cons_notified;
-#endif
 
     std::this_thread::sleep_for(std::chrono::milliseconds(period));
   }
@@ -238,12 +179,7 @@ void FastSwitch::transmit_thread() {
   Deparser *deparser = this->get_deparser("deparser");
   while (1) {
     std::vector<q_elem_t> packets;
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
     output_buffer.pop_back(&packets);
-#elif QUEUE_TYPE == MULTI
-    size_t port;
-    output_buffer.pop_back(0, &port, &packet);
-#endif
     for (auto& packet: packets) {
       deparser->deparse(packet.get());
       BMELOG(packet_out, *packet);
@@ -266,22 +202,11 @@ void FastSwitch::transmit_thread() {
 }
 
 void FastSwitch::ingress_thread() {
-#if !SINGLE_STAGE
   Pipeline *ingress_mau = this->get_pipeline("ingress");
-#endif
   while (1) {
     std::vector<q_elem_t> packets;
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
     input_buffer.pop_back(&packets);
-#elif QUEUE_TYPE == MULTI
-    size_t port;
-    input_buffer.pop_back(0, &port, &packet);
-#endif
     for (auto& packet: packets) {
-
-#if SINGLE_STAGE
-      packet_count_out++;
-#else
       int ingress_port = packet->get_ingress_port();
       (void) ingress_port;
       BMLOG_DEBUG_PKT(*packet, "Processing packet received on port {}",
@@ -289,14 +214,7 @@ void FastSwitch::ingress_thread() {
 
       ingress_mau->apply(packet.get());
 
-#if QUEUE_TYPE == LOCKING
-      process_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == SPSC
-      process_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == MULTI
       process_buffer.push_front(0,std::move(packet));
-#endif
-#endif
     }
   }
 }
@@ -308,28 +226,16 @@ void FastSwitch::egress_thread(size_t i) {
   PHV *phv;
 
   while (1) {
-    std::vector<q_elem_t> packets;
-#if QUEUE_TYPE == LOCKING || QUEUE_TYPE == SPSC
-    process_buffer.pop_back(&packets);
-#elif QUEUE_TYPE == MULTI
+    q_elem_t packet;
     size_t port;
     process_buffer.pop_back(i, &port, &packet);
-#endif
-    for (auto& packet: packets) {
-      phv = packet->get_phv();
-      int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
-      BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
+    phv = packet->get_phv();
+    int egress_port = phv->get_field("standard_metadata.egress_spec").get_int();
+    BMLOG_DEBUG_PKT(*packet, "Egress port is {}", egress_port);
 
-      packet->set_egress_port(egress_port);
-      egress_mau->apply(packet.get());
-#if QUEUE_TYPE == LOCKING
-      output_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == SPSC
-      output_buffer.push_front(std::move(packet));
-#elif QUEUE_TYPE == MULTI
-      output_buffer.push_front(0, std::move(packet));
-#endif
-    }
+    packet->set_egress_port(egress_port);
+    egress_mau->apply(packet.get());
+    output_buffer.push_front(std::move(packet));
   }
 }
 
@@ -339,8 +245,8 @@ static FastSwitch *fast_switch;
 
 int
 main(int argc, char* argv[]) {
-  fast_switch = new FastSwitch();
-  int status = fast_switch->init_from_command_line_options(argc, argv);
+  fast_switch = new FastSwitch(std::atoi(argv[1]));
+  int status = fast_switch->init_from_command_line_options(argc-1, &argv[1]);
   if (status != 0) std::exit(status);
 
   // should this be done by the call to init_from_command_line_options

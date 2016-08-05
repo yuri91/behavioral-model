@@ -18,6 +18,8 @@ parser.add_argument('--use-netmap', help='use netmap instead of BMI',
                     dest="use_netmap", action="store_true", default=False)
 parser.add_argument('--use-netmap-pipes', help='use netmap pipes instead of veth',
                     dest="use_pipes", action="store_true", default=False)
+parser.add_argument('--rate', help='maximum packet rate',
+                    type=str, action="store", default="0")
 
 def sh(cmd, **kwargs):
     args = shlex.split(cmd)
@@ -73,8 +75,8 @@ if __name__ == "__main__":
     if args.malloc != "malloc":
         env={'LD_PRELOAD' : '/usr/lib/lib{}.so'.format(args.malloc)}
 
-    switch = sh("../targets/{0}/{0} {4}  -i 1@{1} -i 2@{2} {3}.json"
-                .format(args.target, intf1s, intf2s, args.program, extra_opts),
+    switch = sh("../targets/{0}/{0} {5} {4}  -i 1@{1} -i 2@{2} {3}.json"
+                .format(args.target, intf1s, intf2s, args.program, extra_opts, args.rate),
                 env=env,
                 stdout=None, stderr=None
                 )

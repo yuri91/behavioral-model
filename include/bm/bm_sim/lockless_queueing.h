@@ -5,6 +5,7 @@
 #include <bm/bm_sim/binary_semaphore.h>
 
 #include <deque>
+#include <ratio>
 #include <queue>
 #include <vector>
 #include <mutex>
@@ -146,6 +147,150 @@ class QueueingLogicLL {
   std::vector<WorkerInfo> workers;
 };
 
+//! This class is slightly more advanced than QueueingLogicLL. The difference
+//! between the 2 is that this one offers the ability to rate-limit every
+//! logical queue, by providing a maximum number of elements consumed per
+//! second. If the rate is too small compared to the incoming packet rate, or if
+//! the worker thread cannot sustain the desired rate, elements are buffered in
+//! the queue. However, the write behavior (push_front()) for this class is
+//! different than the one for QueueingLogic. It is not blocking: if the queue
+//! is full, the function will return immediately and the element will not be
+//! queued. Look at the documentation for QueueingLogic for more information
+//! about the template parameters (they are the same).
+template <typename T, typename FMap>
+class QueueingLogicLLRL {
+ public:
+  using clock = std::chrono::high_resolution_clock;
+
+  QueueingLogicLLRL(size_t nb_queues, size_t nb_workers, size_t capacity,
+                  FMap map_to_worker)
+      : nb_queues(nb_queues), nb_workers(nb_workers),
+        map_to_worker(map_to_worker), workers(nb_workers){
+    for (size_t i = 0; i < nb_queues; i++){
+      workers[map_to_worker(i)].add_queue(i);
+      queues.emplace_back(new SPSCQueue<T>(capacity,workers[map_to_worker(i)].sem));
+    }
+  }
+
+  //! Makes a copy of \p item and pushes it to the front of the logical queue
+  //! with id \p queue_id.
+  void push_front(size_t queue_id, const T &item) {
+    queues.at(queue_id)->push_front_nb(item);
+  }
+
+  //! Moves \p item to the front of the logical queue with id \p queue_id.
+  void push_front(size_t queue_id, T &&item) {
+    queues.at(queue_id)->push_front_nb(std::move(item));
+  }
+
+  void pop_back(size_t worker_id, size_t *queue_id, T *pItem) {
+    WorkerInfo& worker = workers[worker_id];
+    size_t n = worker.queues.size();
+    while(true) {
+      clock::time_point next_time = clock::time_point::max();
+
+      for (size_t i = 0; i < n; i++) {
+        QueueInfo& q = worker.next_queue();
+        if (q.next_pop <= clock::now() && queues[q.index]->pop_back_nb(pItem)) {
+          *queue_id = q.index;
+          q.sent();
+          worker.next_queue();
+          return;
+        } else if (q.next_pop > clock::now()) {
+          next_time = std::min(next_time, q.next_pop);
+        }
+      }
+      for (size_t i = 0; i < n; i++) {
+        QueueInfo& q = worker.next_queue();
+        if (q.next_pop <= clock::now() && queues[q.index]->set_cons_event(1)) {
+          queues[q.index]->pop_back_nb(pItem);
+          *queue_id = q.index;
+          q.sent();
+          worker.next_queue();
+          return;
+        } else if (q.next_pop > clock::now()) {
+          next_time = std::min(next_time, q.next_pop);
+        }
+      }
+      worker.sem->wait_until(next_time);
+    }
+  }
+
+  void set_rate(size_t queue_id, uint64_t pps) {
+    workers[map_to_worker(queue_id)].queues[queue_id].pps = pps;
+  }
+
+  //! Deleted copy constructor
+  QueueingLogicLLRL(const QueueingLogicLLRL &) = delete;
+  //! Deleted copy assignment operator
+  QueueingLogicLLRL &operator =(const QueueingLogicLLRL &) = delete;
+
+  //! Deleted move constructor
+  QueueingLogicLLRL(QueueingLogicLLRL &&) = delete;
+  //! Deleted move assignment operator
+  QueueingLogicLLRL &&operator =(QueueingLogicLLRL &&) = delete;
+
+
+ private:
+  struct QueueInfo {
+    size_t index;
+    std::atomic<uint64_t> pps;
+    clock::time_point last_pop;
+    clock::time_point next_pop;
+    QueueInfo(size_t index): index(index), pps(0){
+      next_pop = clock::now();
+    }
+    QueueInfo(const QueueInfo& q): index(q.index){
+      pps = q.pps.load();
+      next_pop = clock::now();
+    }
+    void sent() {
+      if (pps == 0ul) {
+        return;
+      } else {
+        std::chrono::nanoseconds interval(1000000000 / pps);
+        next_pop += interval;
+      }
+    }
+    void set_rate(uint64_t pps) {
+      this->pps.store(pps);
+      next_pop = clock::now();
+    }
+  };
+
+  //! Utility struct to keep track of the last checked queue. Needed to avoid 
+  //  starvation (by doing a round robin schedule)
+  struct WorkerInfo {
+    std::shared_ptr<BinarySemaphore> sem;
+    std::vector<QueueInfo> queues;
+    size_t cur_idx;
+
+    WorkerInfo() {
+      sem = std::make_shared<BinarySemaphore>();
+      cur_idx = -1;
+    }
+
+    void add_queue(size_t q) {
+      queues.emplace_back(q);
+    }
+
+    QueueInfo& next_queue() {
+      cur_idx++;
+      if (cur_idx == queues.size()) {
+        cur_idx = 0;
+      }
+      return queues[cur_idx];
+    }
+
+  };
+
+  size_t nb_queues;
+  size_t nb_workers;
+  FMap map_to_worker;
+ public:
+  std::vector<std::unique_ptr<SPSCQueue<T>>> queues;
+  std::vector<WorkerInfo> workers;
+};
 }  // namespace bm
 
 #endif  // BM_BM_SIM_LOCKLESS_QUEUEING_H_

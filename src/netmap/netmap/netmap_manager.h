@@ -13,7 +13,7 @@
 
 #include "./netmap_interface.h"
 
-typedef std::function<void(int, const char*, int, uint64_t, void*)>
+typedef std::function<void(int, const char*, int, void*)>
         packet_handler_t;
 
 class NetmapManager {

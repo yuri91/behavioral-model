@@ -178,6 +178,7 @@ AC_CONFIG_FILES([Makefile
 		src/bm_sim/Makefile
 		src/bm_runtime/Makefile
 		src/BMI/Makefile
+		src/netmap/Makefile
 		src/bm_apps/Makefile
 		src/bm_apps/examples/Makefile
 		targets/Makefile

@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
-SUBDIRS = bf_lpm_trie BMI bm_sim bm_runtime bm_apps
+SUBDIRS = bf_lpm_trie BMI bm_sim bm_runtime bm_apps netmap
 
 lib_LTLIBRARIES = libbmp4apps.la libbmall.la
 
@@ -16,6 +16,7 @@ libbmall_la_LIBADD = \
 $(top_builddir)/src/bm_sim/libbmsim.la \
 $(top_builddir)/src/bf_lpm_trie/libbflpmtrie.la \
 $(top_builddir)/src/BMI/libbmi.la \
+$(top_builddir)/src/netmap/libnetmap.la \
 $(top_builddir)/third_party/jsoncpp/libjson.la \
 $(top_builddir)/src/bm_runtime/libbmruntime.la \
 $(top_builddir)/thrift_src/libruntimestubs.la \

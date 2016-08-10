@@ -49,6 +49,7 @@ libsimpleswitch_la_LIBADD = \
 $(top_builddir)/src/bm_sim/libbmsim.la \
 $(top_builddir)/src/bf_lpm_trie/libbflpmtrie.la \
 $(top_builddir)/src/BMI/libbmi.la \
+$(top_builddir)/src/netmap/libnetmap.la \
 $(top_builddir)/third_party/jsoncpp/libjson.la \
 -lboost_system -lboost_thread $(THRIFT_LIB) -lboost_program_options
 

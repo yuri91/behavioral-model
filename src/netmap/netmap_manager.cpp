@@ -102,9 +102,8 @@ void NetmapManager::receive_loop() {
           int len_next = p.second->nextpkt(&buf_next);
           // char* bufcopy = new char[len];
           // memcpy(bufcopy,buf,len);
-          uint64_t flags = (len_next > 0);
           if (packet_handler) {
-            packet_handler(p.first, buf, len, flags, packet_cookie);
+            packet_handler(p.first, buf, len, packet_cookie);
           }
           len = len_next;
           buf = buf_next;

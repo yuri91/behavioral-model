@@ -26,7 +26,7 @@ $(builddir)/libtestutils.la \
 -lboost_system -lboost_thread -lboost_filesystem -lboost_program_options
 
 # Define unit tests
-common_source = main.cpp bmi_stubs.c primitives.cpp
+common_source = main.cpp bmi_stubs.c netmap_stubs.cpp primitives.cpp
 TESTS = test_actions \
 test_checksums \
 test_conditionals \

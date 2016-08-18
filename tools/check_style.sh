@@ -15,6 +15,7 @@ function run_cpplint() {
 
 run_cpplint $ROOT_DIR/src/bm_sim src
 run_cpplint $ROOT_DIR/src/bm_apps src
+run_cpplint $ROOT_DIR/src/netmap src
 run_cpplint $ROOT_DIR/include/bm/bm_sim include
 run_cpplint $ROOT_DIR/include/bm/bm_apps include
 run_cpplint $ROOT_DIR/targets/simple_switch targets

@@ -96,7 +96,7 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
       ("packet-in", po::value<std::string>(),
        "Enable receiving packet on this (nanomsg) socket. "
        "The --interface options will be ignored.")
-      ("use-netmap","Use netmap for packet I/O. ")
+      ("use-netmap", "Use netmap for packet I/O. ")
       ("thrift-port", po::value<int>(),
        "TCP port on which to run the Thrift runtime server")
       ("device-id", po::value<int>(),
@@ -286,7 +286,8 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
 
   if (vm.count("use-netmap")) {
     if (packet_in || use_files) {
-      std::cout << "Error: --use-files and --packet-in are exclusive with --use-netmap\n";
+      std::cout <<
+        "Error: --use-files and --packet-in are exclusive with --use-netmap\n";
       exit(1);
     }
     use_netmap = true;

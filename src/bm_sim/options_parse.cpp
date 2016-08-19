@@ -96,7 +96,9 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
       ("packet-in", po::value<std::string>(),
        "Enable receiving packet on this (nanomsg) socket. "
        "The --interface options will be ignored.")
+#ifdef NETMAP_ON
       ("use-netmap", "Use netmap for packet I/O. ")
+#endif
       ("thrift-port", po::value<int>(),
        "TCP port on which to run the Thrift runtime server")
       ("device-id", po::value<int>(),
@@ -284,6 +286,7 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
     exit(1);
   }
 
+#ifdef NETMAP_ON
   if (vm.count("use-netmap")) {
     if (packet_in || use_files) {
       std::cout <<
@@ -292,6 +295,7 @@ OptionsParser::parse(int argc, char *argv[], TargetParserIface *tp) {
     }
     use_netmap = true;
   }
+#endif
 
   if (vm.count("debugger-addr")) {
     debugger = true;

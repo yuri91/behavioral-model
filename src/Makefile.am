@@ -1,6 +1,10 @@
+if WITH_NETMAP
+    MAYBE_NETMAP = netmap
+endif
+
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
-SUBDIRS = bf_lpm_trie BMI bm_sim bm_runtime bm_apps netmap
+SUBDIRS = bf_lpm_trie BMI ${MAYBE_NETMAP} bm_sim bm_runtime bm_apps
 
 lib_LTLIBRARIES = libbmp4apps.la libbmall.la
 

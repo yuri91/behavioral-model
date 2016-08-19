@@ -161,8 +161,10 @@ SwitchWContexts::init_from_command_line_options(int argc, char *argv[],
 
   if (parser.use_files)
     set_dev_mgr_files(parser.wait_time);
+#ifdef NETMAP_ON
   else if (parser.use_netmap)
     set_dev_mgr_netmap(device_id, transport);
+#endif
   else if (parser.packet_in)
     set_dev_mgr_packet_in(device_id, parser.packet_in_addr, transport);
   else

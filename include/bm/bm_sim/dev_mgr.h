@@ -140,9 +140,11 @@ class DevMgr : public PacketDispatcherIface {
       int device_id,
       std::shared_ptr<TransportIface> notifications_transport = nullptr);
 
+#ifdef NETMAP_ON
   void set_dev_mgr_netmap(
       int device_id,
       std::shared_ptr<TransportIface> notifications_transport = nullptr);
+#endif
 
   // The interface names are instead interpreted as file names.
   // wait_time_in_seconds indicate how long the starting thread should

@@ -73,6 +73,19 @@ AS_IF([test "x$enable_elogger" != "xno"], [
     MY_CPPFLAGS="$MY_CPPFLAGS -DBMELOG_ON"
 ])
 
+netmap_enabled=no
+AC_ARG_ENABLE([netmap],
+    AS_HELP_STRING([--enable-netmap],
+                   [Enable experimental netmap device manager)]))
+AS_IF([test "x$enable_netmap" == "xyes"], [
+    AC_CHECK_HEADER(net/netmap_user.h,
+        [MY_CPPFLAGS="$MY_CPPFLAGS -DNETMAP_ON"
+        netmap_enabled=yes
+        AC_MSG_NOTICE(netmap is supported)],
+        AC_MSG_NOTICE(netmap is not supported))
+])
+AM_CONDITIONAL([WITH_NETMAP], [test "x$netmap_enabled" = "xyes"])
+
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
@@ -209,4 +222,5 @@ AS_ECHO("Coverage enabled .............. : $coverage_enabled")
 AS_ECHO("Debugger enabled .............. : $debugger_enabled")
 AS_ECHO("Logging macros enabled ........ : $logging_macros_enabled")
 AS_ECHO("Event logger enabled .......... : $elogger_enabled")
+AS_ECHO("Netmap enabled ................ : $netmap_enabled")
 AS_ECHO("With pdfixed .................. : $want_pdfixed")

@@ -14,6 +14,10 @@ AM_CFLAGS += $(COVERAGE_FLAGS)
 
 noinst_LTLIBRARIES = libbmsim.la
 
+if WITH_NETMAP
+    MAYBE_NETMAP = dev_mgr_netmap.cpp
+endif
+
 libbmsim_la_SOURCES = \
 actions.cpp \
 ageing.cpp \
@@ -28,7 +32,7 @@ debugger.cpp \
 deparser.cpp \
 dev_mgr.cpp \
 dev_mgr_bmi.cpp \
-dev_mgr_netmap.cpp \
+${MAYBE_NETMAP} \
 dev_mgr_packet_in.cpp \
 event_logger.cpp \
 expressions.cpp \

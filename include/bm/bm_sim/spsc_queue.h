@@ -27,11 +27,9 @@
 
 #include <memory>
 #include <string>
-#include <iostream>
 #include <atomic>
 #include <chrono>
 #include <thread>
-#include <queue>
 
 #include <cmath>
 #include <cassert>
@@ -40,27 +38,41 @@ namespace bm{
 
 /*
  * This class implements a Single-producer Single-consumer lockless queue.
- * Support for batch insertions is through the 'force' argument which,
- * when set, exports the new queue index to the consumer.
- * XXX we also export the info if the queue becomes full
- * Removal can be of a single packet, or of an array.
+ * This is achieved with std::atomic<> variables.
  *
- * Indexes span the entire index_t range, so actual accesses need
- * to use normalize_index() to reduce to ring_capacity (the physical
- * number of entries). The logical size queue_capacity can be
- * arbitrary, ring_capacity is the next power of 2 >= queue_capacity.
+ * The following is an explanation of the internals of this class:
+ * 
+ * The member variables and method are divided between "consumer" and
+ * "producer". The `push_front` operation, for example, belongs to the producer,
+ * and it is supposed to be used only from the producer thread.
  *
- * The class uses atomic variables for the shared indexes between consumer and producer
- * threads. In order to avoid unnecessary notifications on the semaphores, both
+ * The queue is implementet through a ring buffer, but indexes span the entire 
+ * `index_t` range, so actual accesses need to use `normalize_index()` to be
+ * mapped modulo the ring_real capacity. The logical size `queue_capacity` can
+ * be of arbitrary length, and `ring_capacity` will be the next power of 2 >=
+ * `queue_capacity`.
+ *
+ * In order to avoid unnecessary notifications on the semaphores, both
  * the producer and the consumer set an event index corresponding to the point
- * in the queue at which the other thread issues a notification.
- * The consumer sets the event at the next producer index, while the producer
- * can set a point further on in the ring.
+ * in the queue at which it wants the other thread to issue a notification.
+ * The consumer must set the event at the next producer index, while the
+ * producer can set a point further on in the ring.
+ *
+ * This class has both blocking and non-blocking versions for the push and pop
+ * operations.
+ *
+ * For the blocking operations, this class makes use of the `BinarySemaphore`
+ * helper class, which is built upon standard mutexes (see
+ * `binary_semaphore.h`). Since this class is also used by `QueueingLogicLL`
+ * and `QueueingLogicLLRL`, and those classes need to a single semaphore for a 
+ * group of `SPSCQueue` objects, it is possible to explicitly pass a semaphore 
+ * to the constructor. The default argument is the null pointer, and in that
+ *case the constructor will use a private semaphore instance.
  */
 template <class T>
 class SPSCQueue {
  public:
-  using index_t = uint64_t; // XXX could be uint32_t
+  using index_t = uint64_t;
   using atomic_index_t = std::atomic<index_t>;
   static constexpr size_t max_size = 1ul<<(sizeof(index_t)*8-1);
 
@@ -87,8 +99,12 @@ class SPSCQueue {
     }
   }
 
-  // Blocking and non-blocking versions of insert functions,
-  // only for one item at a time.
+  // Blocking and non-blocking versions of push functions,
+  // only for one item at a time. For a batch insertion of size N call the
+  // function with `force=false` for N-1 times, and then `force=true` for the
+  // last time
+  // The real implementation (`push_front_forward`) is in the private section.
+  // See there to know why this is needed.
 
   //! Moves \p item to the front of the queue (producer)
   bool push_front(T&& item, bool force = true) {
@@ -107,7 +123,7 @@ class SPSCQueue {
     return push_front_forward_nb(item, force);
   }
 
-  // Blocking and non blocking versions of remove functions,
+  // Blocking and non blocking versions of pop functions,
   // for one or a vector of items.
 
   //! Pops an element from the back of the queue: moves the element to `*pItem`.
@@ -119,7 +135,8 @@ class SPSCQueue {
 
     return true;
   }
-  //! Pops an element from the back of the queue: moves the element to `*pItem`.
+  //! Pops all the available elements from the back of the queue: moves the
+  // elements to `*container`.
   // (consumer)
   bool pop_back(std::vector<T>* container) {
     index_t num = cons_wait_data(1);
@@ -131,6 +148,8 @@ class SPSCQueue {
     return true;
   }
 
+  //! Pops all the available element from the back of the queue: moves the element to `*pItem`.
+  // (consumer)
   bool pop_back_nb(T* pItem) {
     if (!cons_has_data(1)) {
       return false;
@@ -142,8 +161,10 @@ class SPSCQueue {
     return true;
   }
 
-  //  Used by the consumer to set the cons_event.
+  //! Used by the consumer to set the cons_event.
   //  Returns true if `wait` elements available, false otherwise
+  //  This is public because is needed by the classes in `lockless_queueing.h`
+  //  Should be used externally only when the consumer semaphore is shared
   bool set_cons_event(index_t want) {
     //request wake up when prod_index > cons_event
     cons_event = cons_ci + want - 1;
@@ -154,7 +175,6 @@ class SPSCQueue {
     return false;
   }
 
-  // copy and move constructors and assignment are not supported:
   //! Deleted copy constructor
   SPSCQueue(const SPSCQueue &) = delete;
   //! Deleted copy assignment operator
@@ -200,7 +220,8 @@ class SPSCQueue {
   index_t cons_wait_data(index_t want) {
     while (true) {
       if (cons_has_data(want)) break;
-      // sleep a while and retry
+      // sleep a while and retry (this greatly reduces the number of
+      // notifications received by the consumer
       std::this_thread::sleep_for(std::chrono::microseconds(cons_sleep_time));
       if (cons_has_data(want)) break;
 
@@ -222,7 +243,6 @@ class SPSCQueue {
 
     if (index_t(cons_ci - pe - 1) < index_t(cons_ci - old)) {
       prod_sem_ptr->signal();
-      prod_notified++;
     }
   }
 
@@ -264,7 +284,6 @@ class SPSCQueue {
 
     if (index_t(prod_pi - ce - 1) < index_t(prod_pi - old)) {
       cons_sem_ptr->signal();
-      cons_notified++;
     }
   }
 
@@ -317,11 +336,6 @@ private:
   index_t cons_ci{0}; // copy of consumer index (used by consumer)
   index_t cons_pi{0}; // copy of producer index (used by consumer)
 
- public:
-  alignas(64)
-  uint64_t prod_notified{0};
-  alignas(64)
-  uint64_t cons_notified{0};
 };
 
 } // namespace bm

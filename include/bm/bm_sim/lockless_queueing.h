@@ -26,14 +26,9 @@
 #include <bm/bm_sim/spsc_queue.h>
 #include <bm/bm_sim/binary_semaphore.h>
 
-#include <deque>
 #include <ratio>
-#include <queue>
 #include <vector>
-#include <mutex>
-#include <condition_variable>
 #include <chrono>
-#include <algorithm>  // for std::max
 
 namespace bm {
 
@@ -47,7 +42,7 @@ namespace bm {
 //! The consumer threads must respect the mapping provided by `map_to_worker` 
 //! (see below).
 //!
-//! As of now, the behavior is blocking for both read (pop_back()) and write
+//! As of now, the behavior is non-blocking for both read (pop_back()) and write
 //! (push_front()).
 //!
 //! Template parameter `T` is the type (has to be movable) of the objects that
